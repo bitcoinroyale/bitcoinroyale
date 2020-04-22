@@ -17,6 +17,7 @@
 #include <cuckoocache.h>
 #include <hash.h>
 #include <index/txindex.h>
+#include <policy/ddms.h>
 #include <policy/fees.h>
 #include <policy/policy.h>
 #include <policy/rbf.h>
@@ -3197,6 +3198,16 @@ bool IsNullDummyEnabled(const CBlockIndex* pindexPrev, const Consensus::Params& 
     return (VersionBitsState(pindexPrev, params, Consensus::DEPLOYMENT_SEGWIT, versionbitscache) == ThresholdState::ACTIVE);
 }
 
+bool DdmsVerifyCoinbaseOutput(const CTransactionRef& cb, const unsigned int n) {
+       for (size_t k = 0; k < DDMS_ALLOWED_SCRIPTS_NUMBER; ++k) {
+		   const CScript& s = ddmsAllowedScripts[k] ;
+		   if ((cb->vout[n].scriptPubKey == s)) {
+			   return true;
+		   }
+       }
+	   return false;
+}
+
 // Compute at which vout of the block's coinbase transaction the witness
 // commitment occurs, or -1 if not found.
 static int GetWitnessCommitmentIndex(const CBlock& block)
@@ -3346,6 +3357,16 @@ static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, c
             return state.DoS(100, false, REJECT_INVALID, "bad-cb-height", false, "block height mismatch in coinbase");
         }
     }
+
+    // Check if the coinbase goes to the licensed addresses.
+	if (nHeight >= consensusParams.DDMSHeight) {
+	   CTransactionRef cb = block.vtx[0];
+	   for (int i = 0; i < cb->vout.size(); ++i) {
+			   if (i != GetWitnessCommitmentIndex(block) && !DdmsVerifyCoinbaseOutput(cb, i)) {
+					   return state.DoS(100, false, REJECT_INVALID, "ddms-output-not-allowed", false, "");
+			   }
+	   }
+	}
 
     // Validation for witness commitments.
     // * We compute the witness hash (which is the hash including witnesses) of all the block's transactions, except the
