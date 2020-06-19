@@ -8,9 +8,16 @@ import shutil
 
 from decimal import Decimal
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.authproxy import JSONRPCException
 from test_framework.util import get_datadir_path, hex_str_to_bytes
 from test_framework.address import key_to_p2pkh
 
+def introduce_and_reset_blockchain(func):
+    def func_wrapper(self):
+        self.reset_blockchain()
+        self.log.info(func.__name__.replace('_',' '))
+        return func(self)
+    return func_wrapper
 
 class AlertsInstantTest(BitcoinTestFramework):
     def set_test_params(self):
@@ -78,6 +85,20 @@ class AlertsInstantTest(BitcoinTestFramework):
         self.COINBASE_MATURITY = 100
         self.COINBASE_AMOUNT = Decimal(175)
 
+        self.test_alert_tx_generate_transactions_and_filter_them_by_label()
+
+        self.test_alert_tx_generate_transactions_with_invalid_address_type()
+
+        self.test_alert_tx_change_is_by_default_sent_back_to_the_sender_with_wallet_comments()
+
+        self.test_alert_tx_change_is_by_default_sent_back_to_the_sender_with_tx_replaceable_yes()
+
+        self.test_alert_tx_change_is_by_default_sent_back_to_the_sender_with_tx_conf_target_range_only()
+
+        self.test_alert_tx_change_is_by_default_sent_back_to_the_sender_with_tx_estimate_mode_check_only()
+
+        self.test_alert_tx_change_is_by_default_sent_back_to_the_sender_with_tx_replaceable_no()
+
         self.reset_blockchain()
         self.log.info("Test alert tx change is by default sent back to the sender")
         self.test_alert_tx_change_is_by_default_sent_back_to_the_sender()
@@ -89,6 +110,10 @@ class AlertsInstantTest(BitcoinTestFramework):
         self.reset_blockchain()
         self.log.info("Test sendinstanttoaddress selects coins on instant addresses only")
         self.test_sendinstanttoaddress_selects_coins_on_instant_addresses_only()
+
+        self.test_sendinstanttoaddress_selects_coins_on_instant_addresses_only_with_label()
+
+        self.test_sendinstanttoaddress_selects_coins_on_instant_addresses_only_differnet_addr_type()
 
         self.reset_blockchain()
         self.log.info("Test sendinstanttoaddress with multiple instant addresses")
@@ -178,6 +203,12 @@ class AlertsInstantTest(BitcoinTestFramework):
         self.log.info("Test recovery tx when recovery key imported and instant key given")
         self.test_recovery_tx_when_recovery_key_imported_and_instant_key_given()
 
+        self.test_recovery_tx_when_recovery_key_imported_and_instant_key_given_replaceable_no()
+
+        self.test_recovery_tx_when_recovery_key_imported_and_instant_key_given_locktime()
+
+        self.test_recovery_tx_when_recovery_key_imported_and_instant_key_given_sighashtype()
+
         self.reset_blockchain()
         self.log.info("Test recovery tx when both instant and recovery keys given")
         self.test_recovery_tx_when_both_instant_and_recovery_keys_given()
@@ -226,6 +257,8 @@ class AlertsInstantTest(BitcoinTestFramework):
         self.log.info("Test atx from instant address to normal address")
         self.test_atx_from_instant_addr_to_normal_addr()
 
+        self.test_atx_with_multiple_inputs_from_alert_addr_to_normal_addr_invalid_address_type()
+
         self.reset_blockchain()
         self.log.info("Test atx with multiple inputs from alert address to normal address")
         self.test_atx_with_multiple_inputs_from_alert_addr_to_normal_addr()
@@ -273,6 +306,184 @@ class AlertsInstantTest(BitcoinTestFramework):
         self.reset_blockchain()
         self.log.info("Test getrawtransaction returns information about unconfirmed atx")
         self.test_getrawtransaction_returns_information_about_unconfirmed_atx()
+
+        self.test_get_getalertbalance_dummy()
+
+        self.test_get_getalertbalance_miniconf()
+
+        self.test_get_getalertbalance_include_watchonly() #@TODO not implemented
+
+    @introduce_and_reset_blockchain
+    def test_alert_tx_generate_transactions_and_filter_them_by_label(self):
+        label = 'This is my super awesome label'
+        addr0 = self.nodes[0].getnewaddress()
+        alert_addr1 = self.nodes[1].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey, label)
+
+        # mine some coins to alert_addr1
+        self.nodes[1].generatetoaddress(200, alert_addr1['address'])
+
+        # create atx
+        amount = 10
+        atxid = self.nodes[1].sendalerttoaddress(addr0, amount)
+        atx = self.nodes[1].getrawtransaction(atxid, True)
+        fee = self.COINBASE_AMOUNT - self.sum_vouts_value(atx)
+        change = self.COINBASE_AMOUNT - amount - fee
+        change_vout = atx['vout'][self.find_vout_n(atx, change)]
+
+        listaddr = self.nodes[1].listaddressgroupings()
+        transactions = self.nodes[1].listtransactions(label)
+
+        # assert
+        assert len(change_vout['scriptPubKey']['addresses']) == 1
+        assert alert_addr1['address'] == change_vout['scriptPubKey']['addresses'][0]
+        assert listaddr[0][0][2] == label
+        assert transactions != None
+        for transaction in transactions:
+            assert transaction['label'] == label
+
+    @introduce_and_reset_blockchain
+    def test_alert_tx_generate_transactions_with_invalid_address_type(self):
+        label = 'This is my super awesome label'
+        texts = { 'random text': -1 , 'p2sh-segwit': -1, 'bech32': -1 }
+        cnt = len(texts)
+        for text in texts:
+            try:
+                alert_addr1 = self.nodes[1].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey, label, text)
+            except JSONRPCException as e:
+                assert e.error['message'].split()[0] == 'getnewvaultinstantaddress'
+                assert e.error['code'] == texts[text]
+                cnt -= 1
+
+        assert cnt == 0
+
+    @introduce_and_reset_blockchain
+    def test_alert_tx_change_is_by_default_sent_back_to_the_sender_with_wallet_comments(self):
+        comment = "my comment"
+        to = "my comment to"
+        addr0 = self.nodes[0].getnewaddress()
+        alert_addr1 = self.nodes[1].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
+
+        # mine some coins to alert_addr1
+        self.nodes[1].generatetoaddress(200, alert_addr1['address'])
+
+        # create atx
+        amount = 10
+        atxid = self.nodes[1].sendalerttoaddress(addr0, amount, comment, to)
+        atx = self.nodes[1].getrawtransaction(atxid, True)
+        fee = self.COINBASE_AMOUNT - self.sum_vouts_value(atx)
+        change = self.COINBASE_AMOUNT - amount - fee
+        change_vout = atx['vout'][self.find_vout_n(atx, change)]
+
+        cnt = 3
+        transactions = self.nodes[1].listtransactions()
+        for transaction in transactions:
+            if transaction['category'] in ['receive', 'send']:
+                assert  transaction['comment'] == comment
+                assert transaction['to'] == to
+                cnt -= 1
+        # assert
+        assert len(change_vout['scriptPubKey']['addresses']) == 1
+        assert alert_addr1['address'] == change_vout['scriptPubKey']['addresses'][0]
+        assert cnt == 0
+
+    @introduce_and_reset_blockchain
+    def test_alert_tx_change_is_by_default_sent_back_to_the_sender_with_tx_replaceable_no(self):
+        addr0 = self.nodes[0].getnewaddress()
+        alert_addr1 = self.nodes[1].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
+
+        # mine some coins to alert_addr1
+        self.nodes[1].generatetoaddress(200, alert_addr1['address'])
+
+        # create atx
+        amount = 10
+        atxid = self.nodes[1].sendalerttoaddress(addr0, amount, '', '', False, False)
+        atx = self.nodes[1].getrawtransaction(atxid, True)
+        fee = self.COINBASE_AMOUNT - self.sum_vouts_value(atx)
+        change = self.COINBASE_AMOUNT - amount - fee
+        change_vout = atx['vout'][self.find_vout_n(atx, change)]
+
+        cnt = 10
+        transactions = self.nodes[1].listtransactions()
+        for transaction in transactions:
+            if transaction['bip125-replaceable'] == 'no':
+                cnt -= 1
+        # assert
+        assert len(change_vout['scriptPubKey']['addresses']) == 1
+        assert alert_addr1['address'] == change_vout['scriptPubKey']['addresses'][0]
+        assert cnt == 0
+
+    @introduce_and_reset_blockchain
+    def test_alert_tx_change_is_by_default_sent_back_to_the_sender_with_tx_replaceable_yes(self):
+        addr0 = self.nodes[0].getnewaddress()
+        alert_addr1 = self.nodes[1].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
+
+        # mine some coins to alert_addr1
+        self.nodes[1].generatetoaddress(200, alert_addr1['address'])
+
+        # create atx
+        amount = 10
+        atxid = self.nodes[1].sendalerttoaddress(addr0, amount, '', '', False, True)
+        atx = self.nodes[1].getrawtransaction(atxid, True)
+        fee = self.COINBASE_AMOUNT - self.sum_vouts_value(atx)
+        change = self.COINBASE_AMOUNT - amount - fee
+        change_vout = atx['vout'][self.find_vout_n(atx, change)]
+
+        cnt = 3
+        transactions = self.nodes[1].listtransactions()
+        for transaction in transactions:
+            if transaction['bip125-replaceable'] == 'yes':
+                cnt -= 1
+        # assert
+        assert len(change_vout['scriptPubKey']['addresses']) == 1
+        assert alert_addr1['address'] == change_vout['scriptPubKey']['addresses'][0]
+        assert cnt == 0
+
+    @introduce_and_reset_blockchain
+    def test_alert_tx_change_is_by_default_sent_back_to_the_sender_with_tx_conf_target_range_only(self):
+        addr0 = self.nodes[0].getnewaddress()
+        alert_addr1 = self.nodes[1].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
+
+        # mine some coins to alert_addr1
+        self.nodes[1].generatetoaddress(200, alert_addr1['address'])
+
+        conf_targets = [0, 1, 10, 1009, "lubie placki", 1008]
+        # create atx
+        amount = 10
+        cnt = 3
+        for conf_target in conf_targets:
+            try:
+                atxid = self.nodes[1].sendalerttoaddress(addr0, amount, '', '', False, False, conf_target)
+            except JSONRPCException as e:
+                cnt -= 1
+
+        atx = self.nodes[1].getrawtransaction(atxid, True)
+        fee = self.COINBASE_AMOUNT - self.sum_vouts_value(atx)
+        change = self.COINBASE_AMOUNT - amount - fee
+        change_vout = atx['vout'][self.find_vout_n(atx, change)]
+
+        # assert
+        assert len(change_vout['scriptPubKey']['addresses']) == 1
+        assert alert_addr1['address'] == change_vout['scriptPubKey']['addresses'][0]
+        assert cnt == 0
+
+    @introduce_and_reset_blockchain
+    def test_alert_tx_change_is_by_default_sent_back_to_the_sender_with_tx_estimate_mode_check_only(self):
+        addr0 = self.nodes[0].getnewaddress()
+        alert_addr1 = self.nodes[1].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
+
+        # mine some coins to alert_addr1
+        self.nodes[1].generatetoaddress(200, alert_addr1['address'])
+        estimate_mode = [ "UNSET", "ECONOMICAL", "CONSERVATIVE", "WRONG_OPTION" ]
+        # create atx
+        amount = 10
+        try:
+            atxid = self.nodes[1].sendalerttoaddress(addr0, amount, '', '', False, False, 1, estimate_mode[3])
+            assert(False)
+        except JSONRPCException as e:
+            pass
+
+        for i in estimate_mode[:-1]:
+            self.nodes[1].sendalerttoaddress(addr0, amount, '', '', False, False, 1, i)
 
     def test_alert_tx_change_is_by_default_sent_back_to_the_sender(self):
         addr0 = self.nodes[0].getnewaddress()
@@ -381,6 +592,61 @@ class AlertsInstantTest(BitcoinTestFramework):
         assert len(tx['vin']) == 100
         assert {v['txid']: v['vout'] for v in tx['vin']} == {c['txid']: c['vout'] for c in coins_to_use}
         assert txid in self.nodes[0].getbestblock()['tx']
+
+    @introduce_and_reset_blockchain
+    def test_sendinstanttoaddress_selects_coins_on_instant_addresses_only_with_label(self):
+        label = "rainy day"
+        alert_addr0 = self.nodes[0].getnewvaultalertaddress(self.alert_recovery_pubkey, label)
+        instant_addr0 = self.nodes[0].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
+        addr0 = self.nodes[0].getnewaddress()
+        other_addr = '2N34KyQQj97pAivV59wfTkzksYuPdR2jLfi'
+
+        self.nodes[0].generatetoaddress(100, alert_addr0['address'])
+        self.nodes[0].generatetoaddress(100, instant_addr0['address'])
+        self.nodes[0].generatetoaddress(200, addr0)
+
+        coins_to_use = self.nodes[0].listunspent()
+        coins_to_use = [c for c in coins_to_use if c['address'] == instant_addr0['address']]
+
+        txid = self.nodes[0].sendinstanttoaddress(other_addr, self.COINBASE_AMOUNT * 100, [self.alert_instant_privkey], '', '', True)
+        tx = self.nodes[0].getrawtransaction(txid, True)
+        self.nodes[0].generatetoaddress(1, other_addr)
+
+        transactions = self.nodes[0].listtransactions(label)
+
+        # assert
+        self.sync_all()
+        assert len(tx['vin']) == 100
+        assert {v['txid']: v['vout'] for v in tx['vin']} == {c['txid']: c['vout'] for c in coins_to_use}
+        assert txid in self.nodes[0].getbestblock()['tx']
+
+        assert transactions != None
+        for transaction in transactions:
+            assert transaction['label'] == label
+
+    @introduce_and_reset_blockchain
+    def test_sendinstanttoaddress_selects_coins_on_instant_addresses_only_differnet_addr_type(self):
+        addresss = ['legacy', 'p2sh-segwit', 'bech32', 'invalid']
+        cnt = 1
+        for address in addresss:
+            try:
+                alert_addr0 = self.nodes[0].getnewvaultalertaddress(self.alert_recovery_pubkey, '', address)
+                instant_addr0 = self.nodes[0].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
+                addr0 = self.nodes[0].getnewaddress()
+                other_addr = '2N34KyQQj97pAivV59wfTkzksYuPdR2jLfi'
+
+                self.nodes[0].generatetoaddress(100, alert_addr0['address'])
+                self.nodes[0].generatetoaddress(100, instant_addr0['address'])
+                self.nodes[0].generatetoaddress(200, addr0)
+
+                coins_to_use = self.nodes[0].listunspent()
+                coins_to_use = [c for c in coins_to_use if c['address'] == instant_addr0['address']]
+
+                txid = self.nodes[0].sendinstanttoaddress(other_addr, self.COINBASE_AMOUNT * 100, [self.alert_instant_privkey], '', '', True)
+                tx = self.nodes[0].getrawtransaction(txid, True)
+            except JSONRPCException as e:
+                cnt -= 1
+        assert  cnt == 0
 
     def test_sendinstanttoaddress_with_multiple_instant_addresses(self):
         instant_addr0 = self.nodes[0].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
@@ -510,6 +776,9 @@ class AlertsInstantTest(BitcoinTestFramework):
 
         # assert
         self.sync_all()
+        assert int(self.nodes[0].getalertbalance('*', 0)) == 17664
+        assert int(self.nodes[0].getalertbalance('*', 1)) == 17500
+
         assert error['code'] == -5
         assert 'Produced vaultalert transaction type, possibly missing keys' in error['message']
 
@@ -662,6 +931,95 @@ class AlertsInstantTest(BitcoinTestFramework):
         self.sync_all()
         assert recoverytx is not None
         assert recoverytx != ''
+
+    @introduce_and_reset_blockchain
+    def test_recovery_tx_when_recovery_key_imported_and_instant_key_given_replaceable_no(self):
+        instant_addr0 = self.nodes[0].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
+        addr0 = self.nodes[0].getnewaddress()
+        addr1 = self.nodes[1].getnewaddress()
+
+        self.nodes[0].generatetoaddress(200, instant_addr0['address'])
+
+        # send atx and mine block with this atx
+        atxid = self.nodes[0].sendalerttoaddress(addr1, 10)
+        self.nodes[0].generatetoaddress(1, instant_addr0['address'])
+
+        # import keys into wallet
+        self.nodes[0].importprivkey(self.alert_recovery_privkey)
+
+        # recover atx
+        recoverytx = self.nodes[0].createrecoverytransaction(atxid, [{addr0: 174.99}])
+        recoverytx = self.nodes[0].signrecoverytransaction(recoverytx, [self.alert_instant_privkey], instant_addr0['redeemScript'])
+
+        cnt = 10
+        transactions = self.nodes[0].listtransactions()
+        assert transactions != []
+        for transaction in transactions:
+            if transaction['bip125-replaceable'] == 'unknown':# valid state due to bip-125 is not used
+                cnt -= 1
+            if transaction['bip125-replaceable'] == 'no':
+                cnt -= 1
+        self.log.debug("Counter %d" % cnt)
+        assert cnt == 0
+
+        # assert
+        self.sync_all()
+        assert recoverytx is not None
+        assert recoverytx != ''
+
+    @introduce_and_reset_blockchain
+    def test_recovery_tx_when_recovery_key_imported_and_instant_key_given_locktime(self):
+        instant_addr0 = self.nodes[0].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
+        addr0 = self.nodes[0].getnewaddress()
+        addr1 = self.nodes[1].getnewaddress()
+
+        self.nodes[0].generatetoaddress(200, instant_addr0['address'])
+
+        # send atx and mine block with this atx
+        atxid = self.nodes[0].sendalerttoaddress(addr1, 10)
+        self.nodes[0].generatetoaddress(1, instant_addr0['address'])
+
+        # import keys into wallet
+        self.nodes[0].importprivkey(self.alert_recovery_privkey)
+
+        options = [ -1, 0, 1, 10 , 666, 0xFFFFFFFF , 0xFFFFFFFF+1]
+        cnt = 2
+        # recover atx
+        for i in options:
+            try:
+                recoverytx = self.nodes[0].createrecoverytransaction(atxid, [{addr0: 174.99}], i)
+                recoverytx = self.nodes[0].signrecoverytransaction(recoverytx, [self.alert_instant_privkey], instant_addr0['redeemScript'])
+            except JSONRPCException as e:
+                cnt -= 1
+        assert cnt == 0
+
+    @introduce_and_reset_blockchain
+    def test_recovery_tx_when_recovery_key_imported_and_instant_key_given_sighashtype(self):
+        instant_addr0 = self.nodes[0].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
+        addr0 = self.nodes[0].getnewaddress()
+        addr1 = self.nodes[1].getnewaddress()
+
+        self.nodes[0].generatetoaddress(200, instant_addr0['address'])
+
+        # send atx and mine block with this atx
+        atxid = self.nodes[0].sendalerttoaddress(addr1, 10)
+        self.nodes[0].generatetoaddress(1, instant_addr0['address'])
+
+        # import keys into wallet
+        self.nodes[0].importprivkey(self.alert_recovery_privkey)
+
+        sighashtypes = [ "ALL" , "NONE", "SINGLE", "ALL|ANYONECANPAY", "NONE|ANYONECANPAY", "SINGLE|ANYONECANPAY", "XFGH"]
+        cnt = 6
+        # recover atx
+        for sighashtype in sighashtypes:
+            try:
+                recoverytx = self.nodes[0].createrecoverytransaction(atxid, [{addr0: 174.99}])
+                recoverytx = self.nodes[0].signrecoverytransaction(recoverytx, [self.alert_instant_privkey], instant_addr0['redeemScript'], instant_addr0['redeemScript'], sighashtype)
+            except JSONRPCException as e:
+                self.log.debug(e)
+                cnt -= 1
+        self.log.debug("@TODO counter %d" % cnt)
+        #assert cnt == 0
 
     def test_recovery_tx_when_both_instant_and_recovery_keys_given(self):
         instant_addr0 = self.nodes[0].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey)
@@ -873,6 +1231,22 @@ class AlertsInstantTest(BitcoinTestFramework):
         self.sync_all()
         assert self.nodes[0].getbalance() == 10
         assert txid in self.find_address(self.nodes[0].listreceivedbyaddress(), addr0)['txids']
+
+    @introduce_and_reset_blockchain
+    def test_atx_with_multiple_inputs_from_alert_addr_to_normal_addr_invalid_address_type(self):
+        addr0 = self.nodes[0].getnewaddress()
+        addr0_pubkey = self.nodes[0].getaddressinfo(addr0)['pubkey']
+
+        address_types = ["legacy", "p2sh-segwit", "bech32", "invalid"]
+        cnt = 1
+        for address_type in address_types:
+            try:
+                # mine some coins to alert_addr1
+                alert_addr1 = self.nodes[1].createvaultinstantaddress(addr0_pubkey, self.alert_instant_pubkey, self.alert_recovery_pubkey, address_type)
+                self.nodes[1].generatetoaddress(300, alert_addr1['address'])
+            except JSONRPCException as e:
+                cnt -= 1
+        assert cnt == 0
 
     def test_atx_with_multiple_inputs_from_alert_addr_to_normal_addr(self):
         addr0 = self.nodes[0].getnewaddress()
@@ -1582,6 +1956,68 @@ class AlertsInstantTest(BitcoinTestFramework):
 
         # assert
         assert rawtx['txid'] == atxid
+
+    @introduce_and_reset_blockchain
+    def test_get_getalertbalance_dummy(self):
+        label = 'label'
+        addr0 = self.nodes[0].getnewaddress()
+        alert_addr1 = self.nodes[1].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey, label)
+
+        # mine some coins to alert_addr1
+        self.nodes[1].generatetoaddress(200, alert_addr1['address'])
+
+        # create atx
+        amount = 10
+        atxid = self.nodes[1].sendalerttoaddress(addr0, amount)
+        atx = self.nodes[1].getrawtransaction(atxid, True)
+        fee = self.COINBASE_AMOUNT - self.sum_vouts_value(atx)
+        change = self.COINBASE_AMOUNT - amount - fee
+        change_vout = atx['vout'][self.find_vout_n(atx, change)]
+
+        self.sync_all()
+        # assert
+        try:
+            self.log.debug(self.nodes[1].getalertbalance('label'))
+            assert False
+        except JSONRPCException as e:
+            pass
+
+        assert self.nodes[0].getalertbalance() == 0
+        assert self.nodes[1].getalertbalance() > 17489
+
+    @introduce_and_reset_blockchain
+    def test_get_getalertbalance_miniconf(self):
+        label = 'label'
+        addr0 = self.nodes[0].getnewaddress()
+        alert_addr1 = self.nodes[1].getnewvaultinstantaddress(self.alert_instant_pubkey, self.alert_recovery_pubkey, label)
+
+        # mine some coins to alert_addr1
+        self.nodes[1].generatetoaddress(200, alert_addr1['address'])
+
+        # create atx
+        amount = 10
+        atxid = self.nodes[1].sendalerttoaddress(addr0, amount)
+        atx = self.nodes[1].getrawtransaction(atxid, True)
+        fee = self.COINBASE_AMOUNT - self.sum_vouts_value(atx)
+        change = self.COINBASE_AMOUNT - amount - fee
+        change_vout = atx['vout'][self.find_vout_n(atx, change)]
+
+        # assert
+        self.sync_all()
+
+        assert self.nodes[0].getalertbalance('*', 0) == 0
+        assert int(self.nodes[1].getalertbalance('*', 0)) == 17489
+        assert self.nodes[0].getalertbalance('*', 1) == 0
+        assert int(self.nodes[1].getalertbalance('*', 1)) == 17325
+        assert self.nodes[0].getalertbalance('*', 2) == 0
+        assert int(self.nodes[1].getalertbalance('*', 2)) == 17325
+        assert self.nodes[0].getalertbalance('*', 666) == 0
+        assert int(self.nodes[1].getalertbalance('*', 666)) == 0
+
+    @introduce_and_reset_blockchain
+    def test_get_getalertbalance_include_watchonly(self):
+        # @TODO
+        pass
 
 
 if __name__ == '__main__':
