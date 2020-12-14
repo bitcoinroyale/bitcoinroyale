@@ -36,6 +36,8 @@ public:
     bool m_avoid_partial_spends;
     //! Fee estimation mode to control arguments to estimateSmartFee
     FeeEstimateMode m_fee_mode;
+    //! Vault tx type, used for selecting coins from proper addresses
+    vaulttxntype m_tx_type;
 
     CCoinControl()
     {

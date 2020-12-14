@@ -39,7 +39,7 @@ static void DuplicateInputs(benchmark::State& state)
     {
         LOCK(cs_main);
         ::pblocktree.reset(new CBlockTreeDB(1 << 20, true));
-        ::pcoinsdbview.reset(new CCoinsViewDB(1 << 23, true));
+        ::pcoinsdbview.reset(new CCoinsViewDB(1 << 23, chainparams, true));
         ::pcoinsTip.reset(new CCoinsViewCache(pcoinsdbview.get()));
     }
     {
@@ -85,11 +85,11 @@ static void DuplicateInputs(benchmark::State& state)
     block.vtx.push_back(MakeTransactionRef(std::move(coinbaseTx)));
     block.vtx.push_back(MakeTransactionRef(std::move(naughtyTx)));
 
-    block.hashMerkleRoot = BlockMerkleRoot(block);
+    block.hashMerkleRoot = BlockMerkleRoot(block.vtx);
 
     while (state.KeepRunning()) {
         CValidationState cvstate{};
-        assert(!CheckBlock(block, cvstate, chainparams.GetConsensus(), false, false));
+        assert(!CheckBlock(block, cvstate, chainparams.GetConsensus(), pindexPrev, false, false, false));
         assert(cvstate.GetRejectReason() == "bad-txns-inputs-duplicate");
     }
 

@@ -3252,8 +3252,8 @@ Poznámka: Keďže poplatok je počítaný za bajt, poplatok o hodnote "100 sato
         <translation>Nepodarilo sa spustiť HTTP server. Pre viac detailov zobrazte debug log.</translation>
     </message>
     <message>
-        <source>Bitcoin Royale</source>
-        <translation>Bitcoin Royale</translation>
+        <source>Bitcoin Vault</source>
+        <translation>Bitcoin Vault</translation>
     </message>
     <message>
         <source>The %s developers</source>

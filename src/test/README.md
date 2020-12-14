@@ -5,18 +5,18 @@ and tests weren't explicitly disabled.
 
 After configuring, they can be run with `make check`.
 
-To run the broyaled tests manually, launch `src/test/test_bitcoin`. To recompile
+To run the bvaultd tests manually, launch `src/test/test_bitcoin`. To recompile
 after a test file was modified, run `make` and then run the test again. If you
 modify a non-test file, use `make -C src/test` to recompile only what's needed
-to run the broyaled tests.
+to run the bvaultd tests.
 
-To add more broyaled tests, add `BOOST_AUTO_TEST_CASE` functions to the existing
+To add more bvaultd tests, add `BOOST_AUTO_TEST_CASE` functions to the existing
 .cpp files in the `test/` directory or add new .cpp files that
 implement new BOOST_AUTO_TEST_SUITE sections.
 
-To run the broyale-qt tests manually, launch `src/qt/test/test_bitcoin-qt`
+To run the bvault-qt tests manually, launch `src/qt/test/test_bitcoin-qt`
 
-To add more broyale-qt tests, add them to the `src/qt/test/` directory and
+To add more bvault-qt tests, add them to the `src/qt/test/` directory and
 the `src/qt/test/test_main.cpp` file.
 
 ### Running individual tests

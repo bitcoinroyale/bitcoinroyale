@@ -22,6 +22,7 @@ from test_framework.util import (
     hex_str_to_bytes,
 )
 
+from test_framework.auxpow_testing import mineAuxpowBlock
 from test_framework.messages import BLOCK_HEADER_SIZE
 
 class ReqType(Enum):
@@ -204,8 +205,9 @@ class RESTTest (BitcoinTestFramework):
         long_uri = '/'.join(['{}-{}'.format(txid, n_) for n_ in range(15)])
         self.test_rest_request("/getutxos/checkmempool/{}".format(long_uri), http_method='POST', status=200)
 
-        self.nodes[0].generate(1)  # generate block to not affect upcoming tests
+        mineAuxpowBlock(self.nodes[0])  # generate block to not affect upcoming tests
         self.sync_all()
+        bb_hash = self.nodes[0].getbestblockhash()
 
         self.log.info("Test the /block, /blockhashbyheight and /headers URIs")
         bb_hash = self.nodes[0].getbestblockhash()

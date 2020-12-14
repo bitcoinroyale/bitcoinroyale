@@ -1056,7 +1056,7 @@ BOOST_AUTO_TEST_CASE(script_cltv_truncated)
 }
 
 static CScript
-sign_multisig(const CScript& scriptPubKey, const std::vector<CKey>& keys, const CTransaction& transaction)
+sign_multisig(const CScript& scriptPubKey, const std::vector<CKey>& keys, const CBaseTransaction& transaction)
 {
     uint256 hash = SignatureHash(scriptPubKey, transaction, 0, SIGHASH_ALL, 0, SigVersion::BASE);
 

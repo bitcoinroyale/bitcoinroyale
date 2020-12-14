@@ -391,7 +391,7 @@ bool openBitcoinConf()
 
     configFile.close();
 
-    /* Open broyale.conf with the associated application */
+    /* Open bvault.conf with the associated application */
     return QDesktopServices::openUrl(QUrl::fromLocalFile(boostPathToQString(pathConfig)));
 }
 

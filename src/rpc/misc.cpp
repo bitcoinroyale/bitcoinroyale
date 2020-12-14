@@ -74,6 +74,149 @@ static UniValue validateaddress(const JSONRPCRequest& request)
     return ret;
 }
 
+static UniValue createvaultinstantaddress(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() < 3 || request.params.size() > 4)
+    {
+        std::string msg =
+            RPCHelpMan{"createvaultinstantaddress",
+                "\nCreates an instant/alert address which generates: recoverable transaction alert when signed with 1 signature of 3 keys and instant transaction when signed with 2 signatures of 3 keys.\n"
+                "It returns a json object with the address and redeemScript.\n",
+                {
+                    {"alert_key", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The hex-encoded public key used to generates transaction alerts"},
+                    {"instant_key", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The hex-encoded public key used to generates instant transaction"},
+                    {"recovery_key", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The hex-encoded public key used to recover transaction alerts"},
+                    {"address_type", RPCArg::Type::STR, /* default */ "legacy", "The address type to use. Options are \"legacy\", \"p2sh-segwit\", and \"bech32\"."},
+                },
+                RPCResult{
+                    "{\n"
+                    "  \"address\":\"instantalertaddress\",  (string) The value of the new instant/alert address.\n"
+                    "  \"redeemScript\":\"script\"           (string) The string value of the hex-encoded redemption script.\n"
+                    "}\n"
+                },
+            RPCExamples{
+                    "\nCreate an instant alert address from 3 public keys\n"
+                    + HelpExampleCli("createvaultinstantaddress", "\"\\\"03789ed0bb717d88f7d321a368d905e7430207ebbd82bd342cf11ae157a7ace5fd\\\"\" \"\\\"03dbc6764b8884a92e871274b87583e6d5c2a58819473e17e107ef3f6aa5a61626\\\"\" \"\\\"039d4b4d19413c726b359351273e9d5249b7c184561ff1e920384b04079ae74f36\\\"\"") +
+                    "\nAs a JSON-RPC call\n"
+                    + HelpExampleRpc("createvaultinstantaddress", "\"\\\"03789ed0bb717d88f7d321a368d905e7430207ebbd82bd342cf11ae157a7ace5fd\\\"\", \"\\\"03dbc6764b8884a92e871274b87583e6d5c2a58819473e17e107ef3f6aa5a61626\\\"\", \"\\\"039d4b4d19413c726b359351273e9d5249b7c184561ff1e920384b04079ae74f36\\\"\"")
+                },
+            }.ToString();
+        throw std::runtime_error(msg);
+    }
+
+    // Get the public keys
+    std::vector<CPubKey> pubkeys;
+
+    auto processPubKey = [&] (const UniValue pubKey) -> bool {
+        if (!IsHex(pubKey.get_str()) || !(pubKey.get_str().length() == 66 || pubKey.get_str().length() == 130)) {
+            return false;
+        }
+
+        pubkeys.push_back(HexToPubKey(pubKey.get_str()));
+        return true;
+    };
+
+    if (!processPubKey(request.params[0])) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("Invalid alert public key: %s\n.", request.params[0].get_str()));
+    }
+
+    if (!processPubKey(request.params[1])) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("Invalid instant public key: %s\n.", request.params[1].get_str()));
+    }
+
+    if (!processPubKey(request.params[2])) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("Invalid recovery public key: %s\n.", request.params[2].get_str()));
+    }
+
+    // Get the output type
+    OutputType output_type = OutputType::LEGACY;
+    if (!request.params[3].isNull()) {
+        if (!ParseOutputType(request.params[3].get_str(), output_type)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("Unknown address type '%s'", request.params[3].get_str()));
+        }
+    }
+
+    // Construct using pay-to-script-hash:
+    const CScript inner = CreateVaultAddressRedeemscript(pubkeys, true);
+    CBasicKeyStore keystore;
+    const CTxDestination dest = AddAndGetDestinationForScript(keystore, inner, output_type);
+
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("address", EncodeDestination(dest));
+    result.pushKV("redeemScript", HexStr(inner.begin(), inner.end()));
+
+    return result;
+}
+
+static UniValue createvaultalertaddress(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() < 2 || request.params.size() > 3)
+    {
+        std::string msg =
+            RPCHelpMan{"createvaultalertaddress",
+                "\nCreates a vault address which generates recoverable transaction alert when signed with 1 signature of 2 keys.\n"
+                "It returns a json object with the address and redeemScript.\n",
+                {
+                    {"alert_key", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The hex-encoded public key used to generates transaction alerts"},
+                    {"recovery_key", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The hex-encoded public key used to recover transaction alerts"},
+                    {"address_type", RPCArg::Type::STR, /* default */ "legacy", "The address type to use. Options are \"legacy\", \"p2sh-segwit\", and \"bech32\"."},
+                },
+                RPCResult{
+                    "{\n"
+                    "  \"address\":\"alertaddress\",  (string) The value of the new alert address.\n"
+                    "  \"redeemScript\":\"script\"    (string) The string value of the hex-encoded redemption script.\n"
+                    "}\n"
+                },
+                RPCExamples{
+                    "\nCreate an alert address from 2 public keys\n"
+                    + HelpExampleCli("createvaultalertaddress", "\"\\\"03789ed0bb717d88f7d321a368d905e7430207ebbd82bd342cf11ae157a7ace5fd\\\"\" \"\\\"03dbc6764b8884a92e871274b87583e6d5c2a58819473e17e107ef3f6aa5a61626\\\"\"") +
+                    "\nAs a JSON-RPC call\n"
+                    + HelpExampleRpc("createvaultalertaddress", "\"\\\"03789ed0bb717d88f7d321a368d905e7430207ebbd82bd342cf11ae157a7ace5fd\\\"\", \"\\\"03dbc6764b8884a92e871274b87583e6d5c2a58819473e17e107ef3f6aa5a61626\\\"\"")
+                },
+            }.ToString();
+        throw std::runtime_error(msg);
+    }
+
+    // Get the public keys
+    std::vector<CPubKey> pubkeys;
+
+    auto processPubKey = [&] (const UniValue pubKey) -> bool {
+        if (!IsHex(pubKey.get_str()) || !(pubKey.get_str().length() == 66 || pubKey.get_str().length() == 130)) {
+            return false;
+        }
+
+        pubkeys.push_back(HexToPubKey(pubKey.get_str()));
+        return true;
+    };
+
+    if (!processPubKey(request.params[0])) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("Invalid alert public key: %s\n.", request.params[0].get_str()));
+    }
+
+    if (!processPubKey(request.params[1])) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("Invalid recovery public key: %s\n.", request.params[1].get_str()));
+    }
+
+    // Get the output type
+    OutputType output_type = OutputType::LEGACY;
+    if (!request.params[2].isNull()) {
+        if (!ParseOutputType(request.params[2].get_str(), output_type)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("Unknown address type '%s'", request.params[2].get_str()));
+        }
+    }
+
+    // Construct using pay-to-script-hash:
+    const CScript inner = CreateVaultAddressRedeemscript(pubkeys, false);
+    CBasicKeyStore keystore;
+    const CTxDestination dest = AddAndGetDestinationForScript(keystore, inner, output_type);
+
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("address", EncodeDestination(dest));
+    result.pushKV("redeemScript", HexStr(inner.begin(), inner.end()));
+
+    return result;
+}
+
 static UniValue createmultisig(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() < 2 || request.params.size() > 3)
@@ -581,7 +724,7 @@ static UniValue echo(const JSONRPCRequest& request)
             RPCHelpMan{"echo|echojson ...",
                 "\nSimply echo back the input arguments. This command is for testing.\n"
                 "\nThe difference between echo and echojson is that echojson has argument conversion enabled in the client-side table in "
-                "broyale-cli and the GUI. There is no server-side difference.",
+                "bvault-cli and the GUI. There is no server-side difference.",
                 {},
                 RPCResults{},
                 RPCExamples{""},
@@ -595,19 +738,21 @@ static UniValue echo(const JSONRPCRequest& request)
 static const CRPCCommand commands[] =
 { //  category              name                      actor (function)         argNames
   //  --------------------- ------------------------  -----------------------  ----------
-    { "control",            "getmemoryinfo",          &getmemoryinfo,          {"mode"} },
-    { "control",            "logging",                &logging,                {"include", "exclude"}},
-    { "util",               "validateaddress",        &validateaddress,        {"address"} },
-    { "util",               "createmultisig",         &createmultisig,         {"nrequired","keys","address_type"} },
-    { "util",               "deriveaddresses",        &deriveaddresses,        {"descriptor", "range"} },
-    { "util",               "getdescriptorinfo",      &getdescriptorinfo,      {"descriptor"} },
-    { "util",               "verifymessage",          &verifymessage,          {"address","signature","message"} },
-    { "util",               "signmessagewithprivkey", &signmessagewithprivkey, {"privkey","message"} },
+    { "control",            "getmemoryinfo",             &getmemoryinfo,             {"mode"} },
+    { "control",            "logging",                   &logging,                   {"include", "exclude"}},
+    { "util",               "validateaddress",           &validateaddress,           {"address"} },
+    { "util",               "createmultisig",            &createmultisig,            {"nrequired","keys","address_type"} },
+    { "util",               "createvaultalertaddress",   &createvaultalertaddress,   {"alert_key","recovery_key","address_type"} },
+    { "util",               "createvaultinstantaddress", &createvaultinstantaddress, {"alert_key","instant_key","recovery_key","address_type"} },
+    { "util",               "deriveaddresses",           &deriveaddresses,           {"descriptor", "range"} },
+    { "util",               "getdescriptorinfo",         &getdescriptorinfo,         {"descriptor"} },
+    { "util",               "verifymessage",             &verifymessage,             {"address","signature","message"} },
+    { "util",               "signmessagewithprivkey",    &signmessagewithprivkey,    {"privkey","message"} },
 
     /* Not shown in help */
-    { "hidden",             "setmocktime",            &setmocktime,            {"timestamp"}},
-    { "hidden",             "echo",                   &echo,                   {"arg0","arg1","arg2","arg3","arg4","arg5","arg6","arg7","arg8","arg9"}},
-    { "hidden",             "echojson",               &echo,                   {"arg0","arg1","arg2","arg3","arg4","arg5","arg6","arg7","arg8","arg9"}},
+    { "hidden",             "setmocktime",               &setmocktime,               {"timestamp"}},
+    { "hidden",             "echo",                      &echo,                      {"arg0","arg1","arg2","arg3","arg4","arg5","arg6","arg7","arg8","arg9"}},
+    { "hidden",             "echojson",                  &echo,                      {"arg0","arg1","arg2","arg3","arg4","arg5","arg6","arg7","arg8","arg9"}},
 };
 // clang-format on
 

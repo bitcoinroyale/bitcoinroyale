@@ -1,36 +1,36 @@
 #!/usr/bin/env bash
 #
-#  broyaled The bitcoin core server.
+#  bvaultd The bitcoin core server.
 #
 #
 # chkconfig: 345 80 20
-# description: broyaled
-# processname: broyaled
+# description: bvaultd
+# processname: bvaultd
 #
 
 # Source function library.
 . /etc/init.d/functions
 
-# you can override defaults in /etc/sysconfig/broyaled, see below
-if [ -f /etc/sysconfig/broyaled ]; then
-        . /etc/sysconfig/broyaled
+# you can override defaults in /etc/sysconfig/bvaultd, see below
+if [ -f /etc/sysconfig/bvaultd ]; then
+        . /etc/sysconfig/bvaultd
 fi
 
 RETVAL=0
 
-prog=broyaled
-# you can override the lockfile via BROYALED_LOCKFILE in /etc/sysconfig/broyaled
-lockfile=${BROYALED_LOCKFILE-/var/lock/subsys/broyaled}
+prog=bvaultd
+# you can override the lockfile via BVAULTD_LOCKFILE in /etc/sysconfig/bvaultd
+lockfile=${BVAULTD_LOCKFILE-/var/lock/subsys/bvaultd}
 
-# broyaled defaults to /usr/bin/broyaled, override with BROYALED_BIN
-broyaled=${BROYALED_BIN-/usr/bin/broyaled}
+# bvaultd defaults to /usr/bin/bvaultd, override with BVAULTD_BIN
+bvaultd=${BVAULTD_BIN-/usr/bin/bvaultd}
 
-# broyaled opts default to -disablewallet, override with BROYALED_OPTS
-broyaled_opts=${BROYALED_OPTS--disablewallet}
+# bvaultd opts default to -disablewallet, override with BVAULTD_OPTS
+bvaultd_opts=${BVAULTD_OPTS--disablewallet}
 
 start() {
     echo -n $"Starting $prog: "
-    daemon $DAEMONOPTS $broyaled $broyaled_opts
+    daemon $DAEMONOPTS $bvaultd $bvaultd_opts
     RETVAL=$?
     echo
     [ $RETVAL -eq 0 ] && touch $lockfile

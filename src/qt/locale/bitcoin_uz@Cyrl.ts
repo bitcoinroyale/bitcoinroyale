@@ -1163,8 +1163,8 @@
 <context>
     <name>bitcoin-core</name>
     <message>
-        <source>Bitcoin Royale</source>
-        <translation>Bitcoin Royale</translation>
+        <source>Bitcoin Vault</source>
+        <translation>Bitcoin Vault</translation>
     </message>
     <message>
         <source>Information</source>

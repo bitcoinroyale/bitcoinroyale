@@ -263,7 +263,7 @@ inline void SerializeTransaction(const TxType& tx, Stream& s) {
 /** The basic transaction that is broadcasted on the network and contained in
  * blocks.  A transaction can contain multiple inputs and outputs.
  */
-class CTransaction
+class CBaseTransaction
 {
 public:
     // Default transaction version.
@@ -276,7 +276,7 @@ public:
     static const int32_t MAX_STANDARD_VERSION=2;
 
     // The local variables are made const to prevent unintended modification
-    // without updating the cached hash value. However, CTransaction is not
+    // without updating the cached hash value. However, CBaseTransaction is not
     // actually immutable; deserialization and assignment are implemented,
     // and bypass the constness. This is safe, as they update the entire
     // structure, including the hash.
@@ -294,12 +294,12 @@ private:
     uint256 ComputeWitnessHash() const;
 
 public:
-    /** Construct a CTransaction that qualifies as IsNull() */
-    CTransaction();
+    /** Construct a CBaseTransaction that qualifies as IsNull() */
+    CBaseTransaction();
 
-    /** Convert a CMutableTransaction into a CTransaction. */
-    explicit CTransaction(const CMutableTransaction &tx);
-    CTransaction(CMutableTransaction &&tx);
+    /** Convert a CMutableTransaction into a CBaseTransaction. */
+    explicit CBaseTransaction(const CMutableTransaction &tx);
+    CBaseTransaction(CMutableTransaction &&tx);
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {
@@ -309,7 +309,7 @@ public:
     /** This deserializing constructor is provided instead of an Unserialize method.
      *  Unserialize is not possible, since it would require overwriting const fields. */
     template <typename Stream>
-    CTransaction(deserialize_type, Stream& s) : CTransaction(CMutableTransaction(deserialize, s)) {}
+    CBaseTransaction(deserialize_type, Stream& s) : CBaseTransaction(CMutableTransaction(deserialize, s)) {}
 
     bool IsNull() const {
         return vin.empty() && vout.empty();
@@ -335,17 +335,15 @@ public:
         return (vin.size() == 1 && vin[0].prevout.IsNull());
     }
 
-    friend bool operator==(const CTransaction& a, const CTransaction& b)
+    friend bool operator==(const CBaseTransaction& a, const CBaseTransaction& b)
     {
         return a.hash == b.hash;
     }
 
-    friend bool operator!=(const CTransaction& a, const CTransaction& b)
+    friend bool operator!=(const CBaseTransaction& a, const CBaseTransaction& b)
     {
         return a.hash != b.hash;
     }
-
-    std::string ToString() const;
 
     bool HasWitness() const
     {
@@ -358,7 +356,23 @@ public:
     }
 };
 
-/** A mutable version of CTransaction. */
+class CAlertTransaction : public CBaseTransaction
+{
+    using CBaseTransaction::CBaseTransaction;
+
+public:
+    std::string ToString() const;
+};
+
+class CTransaction : public CBaseTransaction
+{
+    using CBaseTransaction::CBaseTransaction;
+
+public:
+    std::string ToString() const;
+};
+
+/** A mutable version of CBaseTransaction. */
 struct CMutableTransaction
 {
     std::vector<CTxIn> vin;
@@ -367,7 +381,7 @@ struct CMutableTransaction
     uint32_t nLockTime;
 
     CMutableTransaction();
-    explicit CMutableTransaction(const CTransaction& tx);
+    explicit CMutableTransaction(const CBaseTransaction& tx);
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {
@@ -401,8 +415,13 @@ struct CMutableTransaction
     }
 };
 
+typedef std::shared_ptr<const CBaseTransaction> CBaseTransactionRef;
+
 typedef std::shared_ptr<const CTransaction> CTransactionRef;
 static inline CTransactionRef MakeTransactionRef() { return std::make_shared<const CTransaction>(); }
 template <typename Tx> static inline CTransactionRef MakeTransactionRef(Tx&& txIn) { return std::make_shared<const CTransaction>(std::forward<Tx>(txIn)); }
 
+typedef std::shared_ptr<const CAlertTransaction> CAlertTransactionRef;
+static inline CAlertTransactionRef MakeAlertTransactionRef() { return std::make_shared<const CAlertTransaction>(); }
+template <typename Tx> static inline CAlertTransactionRef MakeAlertTransactionRef(Tx&& txIn) { return std::make_shared<const CAlertTransaction>(std::forward<Tx>(txIn)); }
 #endif // BITCOIN_PRIMITIVES_TRANSACTION_H

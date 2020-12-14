@@ -167,11 +167,20 @@ bool DecodeHexBlk(CBlock& block, const std::string& strHexBlk)
 
     std::vector<unsigned char> blockData(ParseHex(strHexBlk));
     CDataStream ssBlock(blockData, SER_NETWORK, PROTOCOL_VERSION);
+
     try {
+        block.fAlertsSerialization = true;
         ssBlock >> block;
     }
     catch (const std::exception&) {
-        return false;
+        try {
+            CDataStream ssBlock(blockData, SER_NETWORK, PROTOCOL_VERSION);
+            block.fAlertsSerialization = false;
+            ssBlock >> block;
+        }
+        catch (const std::exception&) {
+            return false;
+        }
     }
 
     return true;

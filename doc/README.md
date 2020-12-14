@@ -1,30 +1,30 @@
-Bitcoin Royale
+Bitcoin Vault
 ==============
 
 Setup
 ---------------------
-Bitcoin Royale is the original Bitcoin Royale client and it builds the backbone of the network. It downloads and, by default, stores the entire history of Bitcoin transactions, which requires a few hundred gigabytes of disk space. Depending on the speed of your computer and network connection, the synchronization process can take anywhere from a few hours to a day or more.
+Bitcoin Vault is the original Bitcoin Vault client and it builds the backbone of the network. It downloads and, by default, stores the entire history of Bitcoin transactions, which requires a few hundred gigabytes of disk space. Depending on the speed of your computer and network connection, the synchronization process can take anywhere from a few hours to a day or more.
 
-To download Bitcoin Royale, visit [bitcoinroyale.org](https://bitcoinroyale.org/).
+To download Bitcoin Vault, visit [bitcoinvault.global](https://bitcoinvault.global/).
 
 Running
 ---------------------
-The following are some helpful notes on how to run Bitcoin Royale on your native platform.
+The following are some helpful notes on how to run Bitcoin Vault on your native platform.
 
 ### Unix
 
 Unpack the files into a directory and run:
 
-- `bin/broyale-qt` (GUI) or
-- `bin/broyaled` (headless)
+- `bin/bvault-qt` (GUI) or
+- `bin/bvaultd` (headless)
 
 ### Windows
 
-Unpack the files into a directory, and then run broyale-qt.exe.
+Unpack the files into a directory, and then run bvault-qt.exe.
 
 ### macOS
 
-Drag Bitcoin Royale to your applications folder, and then run Bitcoin Royale.
+Drag Bitcoin Vault to your applications folder, and then run Bitcoin Vault.
 
 ### Need Help?
 
@@ -35,7 +35,7 @@ for help and more information.
 
 Building
 ---------------------
-The following are developer notes on how to build Bitcoin Royale on your native platform. They are not complete guides, but include notes on the necessary libraries, compile flags, etc.
+The following are developer notes on how to build Bitcoin Vault on your native platform. They are not complete guides, but include notes on the necessary libraries, compile flags, etc.
 
 - [Dependencies](dependencies.md)
 - [macOS Build Notes](build-osx.md)
@@ -72,7 +72,7 @@ The Bitcoin repo's [root README](/README.md) contains relevant information on th
 
 ### Miscellaneous
 - [Assets Attribution](assets-attribution.md)
-- [broyale.conf Configuration File](bitcoin-conf.md)
+- [bvault.conf Configuration File](bitcoin-conf.md)
 - [Files](files.md)
 - [Fuzz-testing](fuzzing.md)
 - [Reduce Traffic](reduce-traffic.md)

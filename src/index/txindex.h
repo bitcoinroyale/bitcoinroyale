@@ -8,6 +8,7 @@
 #include <chain.h>
 #include <index/base.h>
 #include <txdb.h>
+#include <script/standard.h>
 
 /**
  * TxIndex is used to look up transactions included in the blockchain by hash.
@@ -44,8 +45,9 @@ public:
     /// @param[in]   tx_hash  The hash of the transaction to be returned.
     /// @param[out]  block_hash  The hash of the block the transaction is found in.
     /// @param[out]  tx  The transaction itself.
+    /// @param[out]  txStatus  The status of transaction.
     /// @return  true if transaction is found, false otherwise
-    bool FindTx(const uint256& tx_hash, uint256& block_hash, CTransactionRef& tx) const;
+    bool FindTx(const uint256& tx_hash, uint256& block_hash, CBaseTransactionRef& tx, vaulttxnstatus* txStatus = nullptr) const;
 };
 
 /// The global transaction index, used in GetTransaction. May be null.

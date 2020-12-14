@@ -17,7 +17,9 @@
 #include <policy/feerate.h>
 #include <protocol.h> // For CMessageHeader::MessageStartChars
 #include <script/script_error.h>
+#include <script/standard.h>
 #include <sync.h>
+#include <undo.h>
 #include <versionbits.h>
 
 #include <algorithm>
@@ -31,6 +33,7 @@
 #include <vector>
 
 #include <atomic>
+#include <script/sign.h>
 
 class CBlockIndex;
 class CBlockTreeDB;
@@ -110,9 +113,9 @@ static const unsigned int DATABASE_FLUSH_INTERVAL = 24 * 60 * 60;
 /** Maximum length of reject messages. */
 static const unsigned int MAX_REJECT_MESSAGE_LENGTH = 111;
 /** Block download timeout base, expressed in millionths of the block interval (i.e. 10 min) */
-static const int64_t BLOCK_DOWNLOAD_TIMEOUT_BASE = 1000000;
+static const int64_t BLOCK_DOWNLOAD_TIMEOUT_BASE = 50000;
 /** Additional block download timeout per parallel downloading peer (i.e. 5 min) */
-static const int64_t BLOCK_DOWNLOAD_TIMEOUT_PER_PEER = 500000;
+static const int64_t BLOCK_DOWNLOAD_TIMEOUT_PER_PEER = 25000;
 
 static const int64_t DEFAULT_MAX_TIP_AGE = 24 * 60 * 60;
 /** Maximum age of our tip in seconds for us to be considered current for fee estimation */
@@ -271,7 +274,9 @@ void ThreadScriptCheck();
 /** Check whether we are doing an initial block download (synchronizing from disk or network) */
 bool IsInitialBlockDownload();
 /** Retrieve a transaction (from memory pool, or from disk, if possible) */
-bool GetTransaction(const uint256& hash, CTransactionRef& tx, const Consensus::Params& params, uint256& hashBlock, const CBlockIndex* const blockIndex = nullptr);
+bool GetTransaction(const uint256& hash, CBaseTransactionRef& tx, const Consensus::Params& params, uint256& hashBlock, const CBlockIndex* const blockIndex = nullptr, vaulttxnstatus* txStatus = nullptr);
+/** Retrieve a transaction status (by scanning memory pool, or from disk, if possible) */
+vaulttxnstatus GetTransactionStatus(const uint256& hash, const Consensus::Params& params, vaulttxntype txType = TX_NONVAULT, const CBlockIndex* const blockIndex = nullptr);
 /**
  * Find the best known block, and make it the tip of the block chain
  *
@@ -324,7 +329,13 @@ int VersionBitsTipStateSinceHeight(const Consensus::Params& params, Consensus::D
 
 
 /** Apply the effects of this transaction on the UTXO set represented by view */
-void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight);
+void UpdateCoins(const CBaseTransaction& tx, CCoinsViewCache& inputs, int nHeight);
+
+void SpendInputsCoins(const CBaseTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight);
+
+void ConfirmInputsCoins(const CBaseTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo);
+
+void AddOutputsCoins(const CBaseTransaction& tx, CCoinsViewCache& inputs, int nHeight);
 
 /** Transaction validation functions */
 
@@ -356,6 +367,11 @@ bool TestLockPointValidity(const LockPoints* lp) EXCLUSIVE_LOCKS_REQUIRED(cs_mai
 bool CheckSequenceLocks(const CTxMemPool& pool, const CTransaction& tx, int flags, LockPoints* lp = nullptr, bool useExistingLockPoints = false) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 /**
+ * Returns the script flags which should be checked for a given block
+ */
+unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consensus::Params& chainparams);
+
+/**
  * Closure representing one script verification
  * Note that this stores references to the spending transaction
  */
@@ -363,7 +379,7 @@ class CScriptCheck
 {
 private:
     CTxOut m_tx_out;
-    const CTransaction *ptxTo;
+    const CBaseTransaction *ptxTo;
     unsigned int nIn;
     unsigned int nFlags;
     bool cacheStore;
@@ -372,7 +388,7 @@ private:
 
 public:
     CScriptCheck(): ptxTo(nullptr), nIn(0), nFlags(0), cacheStore(false), error(SCRIPT_ERR_UNKNOWN_ERROR) {}
-    CScriptCheck(const CTxOut& outIn, const CTransaction& txToIn, unsigned int nInIn, unsigned int nFlagsIn, bool cacheIn, PrecomputedTransactionData* txdataIn) :
+    CScriptCheck(const CTxOut& outIn, const CBaseTransaction& txToIn, unsigned int nInIn, unsigned int nFlagsIn, bool cacheIn, PrecomputedTransactionData* txdataIn) :
         m_tx_out(outIn), ptxTo(&txToIn), nIn(nInIn), nFlags(nFlagsIn), cacheStore(cacheIn), error(SCRIPT_ERR_UNKNOWN_ERROR), txdata(txdataIn) { }
 
     bool operator()();
@@ -395,7 +411,7 @@ void InitScriptExecutionCache();
 
 
 /** Functions for disk access for blocks */
-bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, const Consensus::Params& consensusParams);
+bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, const Consensus::Params& consensusParams, bool fAlertsSerialization = false);
 bool ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex, const Consensus::Params& consensusParams);
 bool ReadRawBlockFromDisk(std::vector<uint8_t>& block, const CDiskBlockPos& pos, const CMessageHeader::MessageStartChars& message_start);
 bool ReadRawBlockFromDisk(std::vector<uint8_t>& block, const CBlockIndex* pindex, const CMessageHeader::MessageStartChars& message_start);
@@ -403,10 +419,10 @@ bool ReadRawBlockFromDisk(std::vector<uint8_t>& block, const CBlockIndex* pindex
 /** Functions for validating blocks and updating the block tree */
 
 /** Context-independent validity checks */
-bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true, bool fCheckMerkleRoot = true);
+bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, CBlockIndex* pindexPrev = nullptr, bool fCheckPOW = true, bool fCheckMerkleRoot = true, bool fCheckVaultTxType = true);
 
 /** Check a block is completely valid from start to finish (only works on top of our current best block) */
-bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams, const CBlock& block, CBlockIndex* pindexPrev, bool fCheckPOW = true, bool fCheckMerkleRoot = true) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams, const CBlock& block, CBlockIndex* pindexPrev, bool fCheckPOW = true, bool fCheckMerkleRoot = true, bool fCheckDdms = true) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 /** Check whether witness commitments are required for block. */
 bool IsWitnessEnabled(const CBlockIndex* pindexPrev, const Consensus::Params& params);
@@ -414,14 +430,49 @@ bool IsWitnessEnabled(const CBlockIndex* pindexPrev, const Consensus::Params& pa
 /** Check whether NULLDUMMY (BIP 147) has activated. */
 bool IsNullDummyEnabled(const CBlockIndex* pindexPrev, const Consensus::Params& params);
 
+/** Check whether Alerts has activated. */
+bool AreAlertsEnabled(int nHeight, int nAlertsHeight);
+
+/** Get ancestor block. */
+bool GetAncestorBlock(CBlockIndex* pindexPrev, const Consensus::Params& params, CBlock& ancestorBlock);
+
+/** Calculate tx fee. */
+CAmount GetTxFee(const CBaseTransaction& tx, const CCoinsViewCache& inputs);
+
+/** Check what VaultTxType tx has based on Coins scripts **/
+vaulttxntype GetVaultTxTypeFromStackScript(const std::vector<valtype>& script, txnouttype scriptType = TX_VAULT_ALERTADDRESS);
+vaulttxntype GetVaultTxType(const CBaseTransaction& tx, const CCoinsViewCache& view);
+vaulttxntype GetVaultTxType(const CBaseTransaction& btx);
+vaulttxntype GetVaultTxType(const CMutableTransaction& mtx);
+/** Check what VaultTxType tx has based on vin scripts
+ *
+ * Do not use to verify block or tx! **/
+vaulttxntype GetVaultTxTypeFromTxIn(const CTxIn& txIn);
+vaulttxntype GetVaultTxTypeNonContextual(const CBaseTransaction& tx);
+
 /** When there are blocks in the active chain with missing data, rewind the chainstate and remove them from the block index */
 bool RewindBlockIndex(const CChainParams& params);
 
 /** Update uncommitted block structures (currently: only the witness reserved value). This is safe for submitted blocks. */
 void UpdateUncommittedBlockStructures(CBlock& block, const CBlockIndex* pindexPrev, const Consensus::Params& consensusParams);
 
+/** Generate the necessary coinbase scriptSig depending on block height. */
+CScript GenerateCoinbaseScriptSig(int nHeight, uint256 hashAlertMerkleRoot, const Consensus::Params& consensusParams);
+
+unsigned int GetCoinbaseHeight(const CBlock& block);
+
+uint256 GetCoinbaseAlertMerkleRoot(const CBlock& block);
+
 /** Produce the necessary coinbase commitment for a block (modifies the hash, don't call for mined blocks). */
 std::vector<unsigned char> GenerateCoinbaseCommitment(CBlock& block, const CBlockIndex* pindexPrev, const Consensus::Params& consensusParams);
+
+
+/** Check proof-of-work of a block header, taking auxpow into account.
+ * @param block The block header.
+ * @param params Consensus parameters.
+ * @return True if the PoW is correct.
+ */
+bool CheckProofOfWork(const CBlockHeader& block, const Consensus::Params& params);
 
 /** RAII wrapper for VerifyDB: Verify consistency of the block and coin databases */
 class CVerifyDB {

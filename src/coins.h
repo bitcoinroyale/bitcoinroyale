@@ -25,11 +25,12 @@
  * Serialized format:
  * - VARINT((coinbase ? 1 : 0) | (height << 1))
  * - the non-spent CTxOut (via CTxOutCompressor)
+ * - height > alertsHeight ? confirmed : NOP
  */
 class Coin
 {
 public:
-    //! unspent transaction output
+    //! unspent and/or unconfirmed transaction output
     CTxOut out;
 
     //! whether containing transaction was a coinbase
@@ -38,18 +39,30 @@ public:
     //! at which height this containing transaction was included in the active block chain
     uint32_t nHeight : 31;
 
-    //! construct a Coin from a CTxOut and height/coinbase information.
-    Coin(CTxOut&& outIn, int nHeightIn, bool fCoinBaseIn) : out(std::move(outIn)), fCoinBase(fCoinBaseIn), nHeight(nHeightIn) {}
-    Coin(const CTxOut& outIn, int nHeightIn, bool fCoinBaseIn) : out(outIn), fCoinBase(fCoinBaseIn),nHeight(nHeightIn) {}
+    //! at which height output was and whether is spent
+    uint32_t nSpentHeight;
+
+    // memory only
+    uint32_t fAlertsHeight;
+
+    //! construct a Coin from a CTxOut and height/coinbase/confirmation information.
+    Coin(CTxOut&& outIn, int nHeightIn, bool fCoinBaseIn, uint32_t nSpentHeightIn = 0, uint32_t fAlertsHeightIn = 0) : out(std::move(outIn)), fCoinBase(fCoinBaseIn), nHeight(nHeightIn), nSpentHeight(nSpentHeightIn), fAlertsHeight(fAlertsHeightIn) {}
+    Coin(const CTxOut& outIn, int nHeightIn, bool fCoinBaseIn, uint32_t nSpentHeightIn = 0, uint32_t fAlertsHeightIn = 0) : out(outIn), fCoinBase(fCoinBaseIn), nHeight(nHeightIn), nSpentHeight(nSpentHeightIn), fAlertsHeight(fAlertsHeightIn) {}
 
     void Clear() {
         out.SetNull();
         fCoinBase = false;
         nHeight = 0;
+        fAlertsHeight = 0;
+        nSpentHeight = 0;
+    }
+
+    void Spend(uint32_t nHeight) {
+        nSpentHeight = nHeight;
     }
 
     //! empty constructor
-    Coin() : fCoinBase(false), nHeight(0) { }
+    Coin() : fCoinBase(false), nHeight(0), nSpentHeight(0), fAlertsHeight(0) { }
 
     bool IsCoinBase() const {
         return fCoinBase;
@@ -57,10 +70,14 @@ public:
 
     template<typename Stream>
     void Serialize(Stream &s) const {
-        assert(!IsSpent());
+        assert(!IsConfirmed());
         uint32_t code = nHeight * 2 + fCoinBase;
         ::Serialize(s, VARINT(code));
         ::Serialize(s, CTxOutCompressor(REF(out)));
+        // TODO-fork: Use AreAlertsEnable function
+        if (fAlertsHeight && nHeight > fAlertsHeight) {
+            ::Serialize(s, VARINT(nSpentHeight));
+        }
     }
 
     template<typename Stream>
@@ -70,10 +87,18 @@ public:
         nHeight = code >> 1;
         fCoinBase = code & 1;
         ::Unserialize(s, CTxOutCompressor(out));
+        // TODO-fork: Use AreAlertsEnable function
+        if (fAlertsHeight && nHeight > fAlertsHeight) {
+            ::Unserialize(s, VARINT(nSpentHeight));
+        }
+    }
+
+    bool IsConfirmed() const {
+        return out.IsNull();
     }
 
     bool IsSpent() const {
-        return out.IsNull();
+        return nSpentHeight > 0 || IsConfirmed();
     }
 
     size_t DynamicMemoryUsage() const {
@@ -255,11 +280,18 @@ public:
     void AddCoin(const COutPoint& outpoint, Coin&& coin, bool potential_overwrite);
 
     /**
+     * Confirm a coin. Pass moveto in order to get the deleted data.
+     * If no unspent output exists for the passed outpoint, this call
+     * has no effect.
+     */
+    bool ConfirmCoin(const COutPoint &outpoint, Coin* moveto = nullptr);
+
+    /**
      * Spend a coin. Pass moveto in order to get the deleted data.
      * If no unspent output exists for the passed outpoint, this call
      * has no effect.
      */
-    bool SpendCoin(const COutPoint &outpoint, Coin* moveto = nullptr);
+    bool SpendCoin(const COutPoint &outpoint, int nHeight, Coin* moveto = nullptr);
 
     /**
      * Push the modifications applied to this cache to its base.
@@ -288,10 +320,10 @@ public:
      * @param[in] tx    transaction for which we are checking input total
      * @return  Sum of value of all inputs (scriptSigs)
      */
-    CAmount GetValueIn(const CTransaction& tx) const;
+    CAmount GetValueIn(const CBaseTransaction& tx) const;
 
     //! Check whether all prevouts of the transaction are present in the UTXO set represented by this view
-    bool HaveInputs(const CTransaction& tx) const;
+    bool HaveInputs(const CBaseTransaction& tx) const;
 
 private:
     CCoinsMap::iterator FetchCoin(const COutPoint &outpoint) const;
@@ -303,7 +335,7 @@ private:
 //! an overwrite.
 // TODO: pass in a boolean to limit these possible overwrites to known
 // (pre-BIP34) cases.
-void AddCoins(CCoinsViewCache& cache, const CTransaction& tx, int nHeight, bool check = false);
+void AddCoins(CCoinsViewCache& cache, const CBaseTransaction& tx, int nHeight, bool check = false);
 
 //! Utility function to find any unspent output with a given txid.
 //! This function can be quite expensive because in the event of a transaction

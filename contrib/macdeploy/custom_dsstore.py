@@ -53,7 +53,7 @@ ds['.']['icvp'] = icvp
 ds['.']['vSrn'] = ('long', 1)
 
 ds['Applications']['Iloc'] = (370, 156)
-ds['BRoyale-Qt.app']['Iloc'] = (128, 156)
+ds['BVault-Qt.app']['Iloc'] = (128, 156)
 
 ds.flush()
 ds.close()

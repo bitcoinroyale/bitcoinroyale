@@ -10,7 +10,7 @@
 #include <vector>
 
 /**
- * CBaseChainParams defines the base parameters (shared between broyale-cli and broyaled)
+ * CBaseChainParams defines the base parameters (shared between bvault-cli and bvaultd)
  * of a given instance of the Bitcoin system.
  */
 class CBaseChainParams

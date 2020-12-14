@@ -20,6 +20,7 @@
 #include <policy/policy.h>
 #include <policy/rbf.h>
 #include <primitives/transaction.h>
+#include <rpc/rawtransaction.h>
 #include <rpc/server.h>
 #include <rpc/util.h>
 #include <script/descriptor.h>
@@ -89,6 +90,40 @@ static int ComputeNextBlockAndDepth(const CBlockIndex* tip, const CBlockIndex* b
     return blockindex == tip ? 1 : -1;
 }
 
+UniValue AuxheaderToJSON(const CAuxBlockHeader& auxheader) {
+	UniValue result(UniValue::VOBJ);
+
+	{
+		UniValue tx(UniValue::VOBJ);
+		tx.pushKV("hex", EncodeHexTx(*auxheader.coinbaseTx));
+		TxToJSON(*auxheader.coinbaseTx, auxheader.parentBlock.GetHash(), TX_NONVAULT, TX_UNKNOWN, tx);
+		result.pushKV("tx", tx);
+	}
+
+	result.pushKV("chainindex", auxheader.nChainIndex);
+
+	{
+		UniValue branch(UniValue::VARR);
+		for (const auto& node : auxheader.vMerkleBranch)
+			branch.push_back(node.GetHex());
+		result.pushKV("merklebranch", branch);
+	}
+
+	{
+		UniValue branch(UniValue::VARR);
+		for (const auto& node : auxheader.vChainMerkleBranch)
+			branch.push_back(node.GetHex());
+		result.pushKV("chainmerklebranch", branch);
+	}
+
+	CDataStream ssParent(SER_NETWORK, PROTOCOL_VERSION);
+	ssParent << auxheader.parentBlock;
+	const std::string strHex = HexStr(ssParent);
+	result.pushKV("parentblock", strHex);
+
+	return result;
+}
+
 UniValue blockheaderToJSON(const CBlockIndex* tip, const CBlockIndex* blockindex)
 {
     UniValue result(UniValue::VOBJ);
@@ -129,6 +164,7 @@ UniValue blockToJSON(const CBlock& block, const CBlockIndex* tip, const CBlockIn
     result.pushKV("version", block.nVersion);
     result.pushKV("versionHex", strprintf("%08x", block.nVersion));
     result.pushKV("merkleroot", block.hashMerkleRoot.GetHex());
+    result.pushKV("alertmerkleroot", GetCoinbaseAlertMerkleRoot(block).GetHex());
     UniValue txs(UniValue::VARR);
     for(const auto& tx : block.vtx)
     {
@@ -142,6 +178,19 @@ UniValue blockToJSON(const CBlock& block, const CBlockIndex* tip, const CBlockIn
             txs.push_back(tx->GetHash().GetHex());
     }
     result.pushKV("tx", txs);
+    UniValue atxs(UniValue::VARR);
+    for(const auto& atx : block.vatx)
+    {
+        if(txDetails)
+        {
+            UniValue objATx(UniValue::VOBJ);
+            TxToUniv(*atx, uint256(), objATx, true, RPCSerializationFlags());
+            atxs.push_back(objATx);
+        }
+        else
+            atxs.push_back(atx->GetHash().GetHex());
+    }
+    result.pushKV("atx", atxs);
     result.pushKV("time", block.GetBlockTime());
     result.pushKV("mediantime", (int64_t)blockindex->GetMedianTimePast());
     result.pushKV("nonce", (uint64_t)block.nNonce);
@@ -149,6 +198,9 @@ UniValue blockToJSON(const CBlock& block, const CBlockIndex* tip, const CBlockIn
     result.pushKV("difficulty", GetDifficulty(blockindex));
     result.pushKV("chainwork", blockindex->nChainWork.GetHex());
     result.pushKV("nTx", (uint64_t)blockindex->nTx);
+
+    if (block.auxHeader)
+    	result.pushKV("auxheader", AuxheaderToJSON(*block.auxHeader));
 
     if (blockindex->pprev)
         result.pushKV("previousblockhash", blockindex->pprev->GetBlockHash().GetHex());
@@ -848,7 +900,12 @@ static UniValue getblock(const JSONRPCRequest& request)
             "  \"version\" : n,         (numeric) The block version\n"
             "  \"versionHex\" : \"00000000\", (string) The block version formatted in hexadecimal\n"
             "  \"merkleroot\" : \"xxxx\", (string) The merkle root\n"
+            "  \"alertmerkleroot\" : \"xxxx\", (string) The merkle root\n"
             "  \"tx\" : [               (array of string) The transaction ids\n"
+            "     \"transactionid\"     (string) The transaction id\n"
+            "     ,...\n"
+            "  ],\n"
+            "  \"atx\" : [              (array of string) The alert transaction ids\n"
             "     \"transactionid\"     (string) The transaction id\n"
             "     ,...\n"
             "  ],\n"
@@ -860,13 +917,24 @@ static UniValue getblock(const JSONRPCRequest& request)
             "  \"chainwork\" : \"xxxx\",  (string) Expected number of hashes required to produce the chain up to this block (in hex)\n"
             "  \"nTx\" : n,             (numeric) The number of transactions in the block.\n"
             "  \"previousblockhash\" : \"hash\",  (string) The hash of the previous block\n"
-            "  \"nextblockhash\" : \"hash\"       (string) The hash of the next block\n"
+            "  \"nextblockhash\" : \"hash\",       (string) The hash of the next block\n"
+            "  \"auxheader\" : {		(object) The aux header object attached to this block\n"
+            "    \"tx\" : \"hash\",		(string) The parent chain coinbase tx of this aux header\n"
+            "	 \"index\" : n,			(numeric) Merkle index of the parent coinbase\n"
+            "	 \"merklebranch\" : \"hash\", 	(array of strings) Merkle branch hash of the parent coinbase\n"
+            "	 \"chainindex\" : n,	(numeric) Index in the aux header Merkle tree\n"
+            "	 \"chainmerklebranch\" : \"hash\", (array of strings) Branch in the aux header Merkle tree\n"
+            "	 \"parentblock\" : \"hash\" (string) The parent block serialised as hex string\n"
+            "  }\n"
             "}\n"
                     },
                     RPCResult{"for verbosity = 2",
             "{\n"
             "  ...,                     Same output as verbosity = 1.\n"
             "  \"tx\" : [               (array of Objects) The transactions in the format of the getrawtransaction RPC. Different from verbosity = 1 \"tx\" result.\n"
+            "         ,...\n"
+            "  ],\n"
+            "  \"atx\" : [              (array of Objects) The alert transactions in the format of the getrawtransaction RPC. Different from verbosity = 1 \"atx\" result.\n"
             "         ,...\n"
             "  ],\n"
             "  ,...                     Same output as verbosity = 1.\n"
@@ -1354,12 +1422,10 @@ UniValue getblockchaininfo(const JSONRPCRequest& request)
     softforks.push_back(SoftForkDesc("bip34", 2, tip, consensusParams));
     softforks.push_back(SoftForkDesc("bip66", 3, tip, consensusParams));
     softforks.push_back(SoftForkDesc("bip65", 4, tip, consensusParams));
-    for (int pos = Consensus::DEPLOYMENT_CSV; pos != Consensus::MAX_VERSION_BITS_DEPLOYMENTS; ++pos) {
-        BIP9SoftForkDescPushBack(bip9_softforks, consensusParams, static_cast<Consensus::DeploymentPos>(pos));
-    }
-    obj.pushKV("softforks",             softforks);
-    obj.pushKV("bip9_softforks", bip9_softforks);
+    softforks.push_back(SoftForkDesc("csv", consensusParams.CSVHeight, tip, consensusParams));
+    softforks.push_back(SoftForkDesc("segwit", consensusParams.SegwitHeight, tip, consensusParams));
 
+    obj.pushKV("softforks",             softforks);
     obj.pushKV("warnings", GetWarnings("statusbar"));
     return obj;
 }
@@ -1958,7 +2024,7 @@ static UniValue getblockstats(const JSONRPCRequest& request)
         if (loop_inputs) {
             CAmount tx_total_in = 0;
             for (const CTxIn& in : tx->vin) {
-                CTransactionRef tx_in;
+                CBaseTransactionRef tx_in;
                 uint256 hashBlock;
                 if (!GetTransaction(in.prevout.hash, tx_in, Params().GetConsensus(), hashBlock)) {
                     throw JSONRPCError(RPC_INTERNAL_ERROR, std::string("Unexpected internal error (tx index seems corrupt)"));

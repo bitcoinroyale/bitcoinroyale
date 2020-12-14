@@ -2260,7 +2260,7 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
 <context>
     <name>bitcoin-core</name>
     <message>
-        <source>Bitcoin Royale</source>
+        <source>Bitcoin Vault</source>
         <translation>هسته بیت کوین</translation>
     </message>
     <message>

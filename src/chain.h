@@ -291,18 +291,7 @@ public:
         return ret;
     }
 
-    CBlockHeader GetBlockHeader() const
-    {
-        CBlockHeader block;
-        block.nVersion       = nVersion;
-        if (pprev)
-            block.hashPrevBlock = pprev->GetBlockHash();
-        block.hashMerkleRoot = hashMerkleRoot;
-        block.nTime          = nTime;
-        block.nBits          = nBits;
-        block.nNonce         = nNonce;
-        return block;
-    }
+    CBlockHeader GetBlockHeader() const;
 
     uint256 GetBlockHash() const
     {
@@ -346,10 +335,11 @@ public:
 
     std::string ToString() const
     {
-        return strprintf("CBlockIndex(pprev=%p, nHeight=%d, merkle=%s, hashBlock=%s)",
+        return strprintf("CBlockIndex(pprev=%p, nHeight=%d, merkle=%s, hashBlock=%s, version=%d)",
             pprev, nHeight,
             hashMerkleRoot.ToString(),
-            GetBlockHash().ToString());
+            GetBlockHash().ToString(),
+            nVersion);
     }
 
     //! Check whether this block index entry is valid up to the passed validity level.
@@ -381,6 +371,11 @@ public:
     //! Efficiently find an ancestor of this block.
     CBlockIndex* GetAncestor(int height);
     const CBlockIndex* GetAncestor(int height) const;
+
+    /* Analyse the block version. */
+    int GetBaseVersion() const {
+    	return CBlockHeader::GetBaseVersion(nVersion);
+    }
 };
 
 arith_uint256 GetBlockProof(const CBlockIndex& block);

@@ -33,10 +33,26 @@ const char* GetTxnOutputType(txnouttype t)
     case TX_PUBKEYHASH: return "pubkeyhash";
     case TX_SCRIPTHASH: return "scripthash";
     case TX_MULTISIG: return "multisig";
+    case TX_VAULT_ALERTADDRESS: return "vaultalert";
+    case TX_VAULT_INSTANTADDRESS: return "vaultinstant";
     case TX_NULL_DATA: return "nulldata";
     case TX_WITNESS_V0_KEYHASH: return "witness_v0_keyhash";
     case TX_WITNESS_V0_SCRIPTHASH: return "witness_v0_scripthash";
     case TX_WITNESS_UNKNOWN: return "witness_unknown";
+    }
+    return nullptr;
+}
+
+const char* GetTxnOutputType(vaulttxntype t)
+{
+    switch (t)
+    {
+        case TX_INVALID: return "invalid";
+        case TX_NONVAULT: return "nonvault";
+        case TX_ALERT: return "vaultalert";
+        case TX_INSTANT: return "vaultinstant";
+        case TX_RECOVERY: return "vaultrecovery";
+
     }
     return nullptr;
 }
@@ -67,6 +83,46 @@ static bool MatchPayToPubkeyHash(const CScript& script, valtype& pubkeyhash)
 static constexpr bool IsSmallInteger(opcodetype opcode)
 {
     return opcode >= OP_1 && opcode <= OP_16;
+}
+
+bool MatchAlertAddress(const CScript& script, std::vector<valtype>& pubkeys)
+{
+    opcodetype opcode;
+    valtype data;
+    CScript::const_iterator it = script.begin();
+    if (script.size() < 1 || script.back() != OP_CHECKMULTISIG) return false;
+
+    std::vector<opcodetype> expectedFrontOpcodes = {OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF};
+    for (opcodetype expectedOpcode : expectedFrontOpcodes) {
+        if (!script.GetOp(it, opcode, data) || opcode != expectedOpcode) return false;
+    }
+    while (script.GetOp(it, opcode, data) && CPubKey::ValidSize(data)) {
+        pubkeys.emplace_back(std::move(data));
+    }
+    if (pubkeys.size() != 2) return false;
+    if (opcode != OP_2) return false;
+    return (it + 1 == script.end());
+}
+
+bool MatchInstantAlertAddress(const CScript& script, std::vector<valtype>& pubkeys)
+{
+    opcodetype opcode;
+    valtype data;
+    CScript::const_iterator it = script.begin();
+    if (script.size() < 1 || script.back() != OP_CHECKMULTISIG) return false;
+
+    std::vector<opcodetype> expectedFrontOpcodes = {
+            OP_IF, OP_1, OP_ELSE, OP_IF, OP_2, OP_ELSE, OP_3, OP_ENDIF, OP_ENDIF
+    };
+    for (opcodetype expectedOpcode : expectedFrontOpcodes) {
+        if (!script.GetOp(it, opcode, data) || opcode != expectedOpcode) return false;
+    }
+    while (script.GetOp(it, opcode, data) && CPubKey::ValidSize(data)) {
+        pubkeys.emplace_back(std::move(data));
+    }
+    if (pubkeys.size() != 3) return false;
+    if (opcode != OP_3) return false;
+    return (it + 1 == script.end());
 }
 
 static bool MatchMultisig(const CScript& script, unsigned int& required, std::vector<valtype>& pubkeys)
@@ -139,8 +195,20 @@ txnouttype Solver(const CScript& scriptPubKey, std::vector<std::vector<unsigned 
         return TX_PUBKEYHASH;
     }
 
-    unsigned int required;
     std::vector<std::vector<unsigned char>> keys;
+    if (MatchAlertAddress(scriptPubKey, keys)) {
+        vSolutionsRet.insert(vSolutionsRet.end(), keys.begin(), keys.end());
+        return TX_VAULT_ALERTADDRESS;
+    }
+
+    keys.clear();
+    if (MatchInstantAlertAddress(scriptPubKey, keys)) {
+        vSolutionsRet.insert(vSolutionsRet.end(), keys.begin(), keys.end());
+        return TX_VAULT_INSTANTADDRESS;
+    }
+
+    unsigned int required;
+    keys.clear();
     if (MatchMultisig(scriptPubKey, required, keys)) {
         vSolutionsRet.push_back({static_cast<unsigned char>(required)}); // safe as required is in range 1..16
         vSolutionsRet.insert(vSolutionsRet.end(), keys.begin(), keys.end());
@@ -212,6 +280,22 @@ bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, std::
     {
         nRequiredRet = vSolutions.front()[0];
         for (unsigned int i = 1; i < vSolutions.size()-1; i++)
+        {
+            CPubKey pubKey(vSolutions[i]);
+            if (!pubKey.IsValid())
+                continue;
+
+            CTxDestination address = pubKey.GetID();
+            addressRet.push_back(address);
+        }
+
+        if (addressRet.empty())
+            return false;
+    }
+    else if (typeRet == TX_VAULT_ALERTADDRESS || typeRet == TX_VAULT_INSTANTADDRESS)
+    {
+        nRequiredRet = 1;
+        for (unsigned int i = 0; i < vSolutions.size(); i++)
         {
             CPubKey pubKey(vSolutions[i]);
             if (!pubKey.IsValid())
@@ -303,6 +387,24 @@ CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys)
     CScript script;
 
     script << CScript::EncodeOP_N(nRequired);
+    for (const CPubKey& key : keys)
+        script << ToByteVector(key);
+    script << CScript::EncodeOP_N(keys.size()) << OP_CHECKMULTISIG;
+    return script;
+}
+
+CScript GetScriptForVaultAddress(const std::vector<CPubKey>& keys, bool instant)
+{
+    CScript script;
+
+    script << OP_IF << OP_1 << OP_ELSE;
+    if (!instant) {
+        script << OP_2;
+    } else {
+        script << OP_IF << OP_2 << OP_ELSE << OP_3 << OP_ENDIF;
+    }
+    script << OP_ENDIF;
+
     for (const CPubKey& key : keys)
         script << ToByteVector(key);
     script << CScript::EncodeOP_N(keys.size()) << OP_CHECKMULTISIG;

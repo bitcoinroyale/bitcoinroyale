@@ -53,11 +53,12 @@ struct CoinEntry {
 
 }
 
-CCoinsViewDB::CCoinsViewDB(size_t nCacheSize, bool fMemory, bool fWipe) : db(GetDataDir() / "chainstate", nCacheSize, fMemory, fWipe, true)
+CCoinsViewDB::CCoinsViewDB(size_t nCacheSize, const CChainParams& chainparams, bool fMemory, bool fWipe) : db(GetDataDir() / "chainstate", nCacheSize, fMemory, fWipe, true), params(chainparams)
 {
 }
 
 bool CCoinsViewDB::GetCoin(const COutPoint &outpoint, Coin &coin) const {
+    coin.fAlertsHeight = params.GetConsensus().AlertsHeight;
     return db.Read(CoinEntry(&outpoint), coin);
 }
 
@@ -108,10 +109,12 @@ bool CCoinsViewDB::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlock) {
     for (CCoinsMap::iterator it = mapCoins.begin(); it != mapCoins.end();) {
         if (it->second.flags & CCoinsCacheEntry::DIRTY) {
             CoinEntry entry(&it->first);
-            if (it->second.coin.IsSpent())
+            if (it->second.coin.IsConfirmed())
                 batch.Erase(entry);
-            else
+            else {
+                it->second.coin.fAlertsHeight = params.GetConsensus().AlertsHeight;
                 batch.Write(entry, it->second.coin);
+            }
             changed++;
         }
         count++;
@@ -274,8 +277,10 @@ bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, 
                 pindexNew->nStatus        = diskindex.nStatus;
                 pindexNew->nTx            = diskindex.nTx;
 
-                if (!CheckProofOfWork(pindexNew->GetBlockHash(), pindexNew->nBits, consensusParams))
-                    return error("%s: CheckProofOfWork failed: %s", __func__, pindexNew->ToString());
+                /* Bitcoin checks the PoW here. We don't do this because
+                 * the CDsicBlockIndex does not contain the auxpow.
+                 * This check isn't important, since the data on disk should
+                 * already be valid and can be trusted. */
 
                 pcursor->Next();
             } else {

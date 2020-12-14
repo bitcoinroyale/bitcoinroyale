@@ -29,16 +29,16 @@
   <string>????</string>
 
   <key>CFBundleExecutable</key>
-  <string>BRoyale-Qt</string>
+  <string>BVault-Qt</string>
   
   <key>CFBundleName</key>
-  <string>BRoyale-Qt</string>
+  <string>BVault-Qt</string>
 
   <key>LSHasLocalizedDisplayName</key>
   <true/>
 
   <key>CFBundleIdentifier</key>
-  <string>org.bitcoinfoundation.BRoyale-Qt</string>
+  <string>org.bitcoinfoundation.BVault-Qt</string>
 
   <key>CFBundleURLTypes</key>
   <array>

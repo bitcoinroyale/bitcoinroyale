@@ -32,7 +32,7 @@ namespace interfaces {
 class Handler;
 class Wallet;
 
-//! Top-level interface for a bitcoin node (broyaled process).
+//! Top-level interface for a bitcoin node (bvaultd process).
 class Node
 {
 public:

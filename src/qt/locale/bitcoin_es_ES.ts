@@ -2855,8 +2855,8 @@
         <translation>No se ha podido comenzar el servidor HTTP. Ver debug log para detalles.</translation>
     </message>
     <message>
-        <source>Bitcoin Royale</source>
-        <translation>Bitcoin Royale</translation>
+        <source>Bitcoin Vault</source>
+        <translation>Bitcoin Vault</translation>
     </message>
     <message>
         <source>The %s developers</source>

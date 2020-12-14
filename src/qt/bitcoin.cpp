@@ -493,7 +493,7 @@ int GuiMain(int argc, char* argv[])
     if (!Intro::pickDataDirectory(*node))
         return EXIT_SUCCESS;
 
-    /// 6. Determine availability of data and blocks directory and parse broyale.conf
+    /// 6. Determine availability of data and blocks directory and parse bvault.conf
     /// - Do not call GetDataDir(true) before this step finishes
     if (!fs::is_directory(GetDataDir(false)))
     {

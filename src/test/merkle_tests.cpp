@@ -116,7 +116,7 @@ static std::vector<uint256> ComputeMerkleBranch(const std::vector<uint256>& leav
     return ret;
 }
 
-static std::vector<uint256> BlockMerkleBranch(const CBlock& block, uint32_t position)
+std::vector<uint256> BlockMerkleBranch(const CBlock& block, uint32_t position)
 {
     std::vector<uint256> leaves;
     leaves.resize(block.vtx.size());
@@ -206,7 +206,7 @@ BOOST_AUTO_TEST_CASE(merkle_test)
             }
             // Compute the root of the block before mutating it.
             bool unmutatedMutated = false;
-            uint256 unmutatedRoot = BlockMerkleRoot(block, &unmutatedMutated);
+            uint256 unmutatedRoot = BlockMerkleRoot(block.vtx, &unmutatedMutated);
             BOOST_CHECK(unmutatedMutated == false);
             // Optionally mutate by duplicating the last transactions, resulting in the same merkle root.
             block.vtx.resize(ntx3);
@@ -225,7 +225,7 @@ BOOST_AUTO_TEST_CASE(merkle_test)
             uint256 oldRoot = BlockBuildMerkleTree(block, &oldMutated, merkleTree);
             // Compute the merkle root using the new mechanism.
             bool newMutated = false;
-            uint256 newRoot = BlockMerkleRoot(block, &newMutated);
+            uint256 newRoot = BlockMerkleRoot(block.vtx, &newMutated);
             BOOST_CHECK(oldRoot == newRoot);
             BOOST_CHECK(newRoot == unmutatedRoot);
             BOOST_CHECK((newRoot == uint256()) == (ntx == 0));

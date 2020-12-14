@@ -5,6 +5,10 @@
 
 #include <chain.h>
 
+#include <chainparams.h>
+#include <validation.h>
+
+
 /**
  * CChain implementation
  */
@@ -78,6 +82,29 @@ int static inline GetSkipHeight(int height) {
     // but the following expression seems to perform well in simulations (max 110 steps to go back
     // up to 2**18 blocks).
     return (height & 1) ? InvertLowestOne(InvertLowestOne(height - 1)) + 1 : InvertLowestOne(height);
+}
+
+/* Moved here from the header, because we need auxpow and the logic
+ * becomes more involved. */
+CBlockHeader CBlockIndex::GetBlockHeader() const {
+	CBlock block;
+	block.nVersion       = nVersion;
+
+	/* The CBlockIndex object's block header is missing the auxpow.
+	 * So if this is an auxpow block, read it from disk instead. We only
+	 * have to read the actual *header*, not the full block. */
+	if (block.IsAuxPow()) {
+		ReadBlockFromDisk(block, this, Params().GetConsensus());
+		return block.GetBlockHeader();
+	}
+
+	if (pprev)
+		block.hashPrevBlock = pprev->GetBlockHash();
+	block.hashMerkleRoot = hashMerkleRoot;
+	block.nTime          = nTime;
+	block.nBits          = nBits;
+	block.nNonce         = nNonce;
+	return block.GetBlockHeader();
 }
 
 const CBlockIndex* CBlockIndex::GetAncestor(int height) const

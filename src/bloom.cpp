@@ -155,7 +155,8 @@ bool CBloomFilter::IsRelevantAndUpdate(const CTransaction& tx)
                 {
                     std::vector<std::vector<unsigned char> > vSolutions;
                     txnouttype type = Solver(txout.scriptPubKey, vSolutions);
-                    if (type == TX_PUBKEY || type == TX_MULTISIG) {
+                    if (type == TX_PUBKEY || type == TX_MULTISIG
+                        || type == TX_VAULT_ALERTADDRESS || type == TX_VAULT_INSTANTADDRESS) {
                         insert(COutPoint(hash, i));
                     }
                 }

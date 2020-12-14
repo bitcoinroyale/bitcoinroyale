@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <amount.h>
+#include <auxpow.h>
 #include <chain.h>
 #include <chainparams.h>
 #include <consensus/consensus.h>
@@ -15,6 +16,7 @@
 #include <net.h>
 #include <policy/fees.h>
 #include <pow.h>
+#include <rpc/auxpow_miner.h>
 #include <rpc/blockchain.h>
 #include <rpc/mining.h>
 #include <rpc/server.h>
@@ -119,7 +121,7 @@ UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGen
         CBlock *pblock = &pblocktemplate->block;
         {
             LOCK(cs_main);
-            IncrementExtraNonce(pblock, chainActive.Tip(), nExtraNonce);
+            IncrementExtraNonce(pblock, chainActive.Tip(), nExtraNonce, Params().GetConsensus());
         }
         while (nMaxTries > 0 && pblock->nNonce < nInnerLoopCount && !CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus())) {
             ++pblock->nNonce;
@@ -131,6 +133,7 @@ UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGen
         if (pblock->nNonce == nInnerLoopCount) {
             continue;
         }
+        CAuxPow::initBlockHeader(*pblock);
         std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(*pblock);
         if (!ProcessNewBlock(Params(), shared_pblock, true, nullptr))
             throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
@@ -217,6 +220,7 @@ static UniValue getmininginfo(const JSONRPCRequest& request)
     obj.pushKV("blocks",           (int)chainActive.Height());
     if (BlockAssembler::m_last_block_weight) obj.pushKV("currentblockweight", *BlockAssembler::m_last_block_weight);
     if (BlockAssembler::m_last_block_num_txs) obj.pushKV("currentblocktx", *BlockAssembler::m_last_block_num_txs);
+    if (BlockAssembler::m_last_block_num_atxs) obj.pushKV("currentblockatx", *BlockAssembler::m_last_block_num_atxs);
     obj.pushKV("difficulty",       (double)GetDifficulty(chainActive.Tip()));
     obj.pushKV("networkhashps",    getnetworkhashps(request));
     obj.pushKV("pooledtx",         (uint64_t)mempool.size());
@@ -226,7 +230,7 @@ static UniValue getmininginfo(const JSONRPCRequest& request)
 }
 
 
-// NOTE: Unlike wallet RPC (which use BTCR values), mining RPCs follow GBT (BIP 22) in using satoshi amounts
+// NOTE: Unlike wallet RPC (which use BTCV values), mining RPCs follow GBT (BIP 22) in using satoshi amounts
 static UniValue prioritisetransaction(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() != 3)
@@ -347,24 +351,41 @@ static UniValue getblocktemplate(const JSONRPCRequest& request)
             "      }\n"
             "      ,...\n"
             "  ],\n"
-            "  \"coinbaseaux\" : {                 (json object) data that should be included in the coinbase's scriptSig content\n"
-            "      \"flags\" : \"xx\"                  (string) key name is to be ignored, and value included in scriptSig\n"
+            "  \"transactionalerts\" : [           (array) contents transaction alerts that should be included in the next block\n"
+            "      {\n"
+            "         \"data\" : \"xxxx\",             (string) transaction alert data encoded in hexadecimal (byte-for-byte)\n"
+            "         \"txid\" : \"xxxx\",             (string) transaction alert id encoded in little-endian hexadecimal\n"
+            "         \"hash\" : \"xxxx\",             (string) hash encoded in little-endian hexadecimal (including witness data)\n"
+            "         \"depends\" : [                (array) array of numbers \n"
+            "             n                          (numeric) transactions before this one (by 1-based index in 'transactions' list) that must be present in the final block if this one is\n"
+            "             ,...\n"
+            "         ],\n"
+            "         \"sigops\" : n,                (numeric) total SigOps cost, as counted for purposes of block limits; if key is not present, sigop cost is unknown and clients MUST NOT assume it is zero\n"
+            "         \"weight\" : n,                (numeric) total transaction alert weight, as counted for purposes of block limits\n"
+            "      }\n"
+            "      ,...\n"
+            "  ],\n"
+            "  \"transactionalertsmerkleroot\" : \"xxxx\",   (string) transaction alerts merkle root encoded in little-endian hexadecimal\n"
+            "  \"coinbaseaux\" : {                         (json object) data that should be included in the coinbase's scriptSig content\n"
+            "      \"flags\" : \"xx\"                          (string) key name is to be ignored, and value included in scriptSig\n"
             "  },\n"
-            "  \"coinbasevalue\" : n,              (numeric) maximum allowable input to coinbase transaction, including the generation award and transaction fees (in satoshis)\n"
-            "  \"coinbasetxn\" : { ... },          (json object) information for coinbase transaction\n"
-            "  \"target\" : \"xxxx\",                (string) The hash target\n"
-            "  \"mintime\" : xxx,                  (numeric) The minimum timestamp appropriate for next block time in seconds since epoch (Jan 1 1970 GMT)\n"
-            "  \"mutable\" : [                     (array of string) list of ways the block template may be changed \n"
-            "     \"value\"                          (string) A way the block template may be changed, e.g. 'time', 'transactions', 'prevblock'\n"
+            "  \"coinbasevalue\" : n,                      (numeric) maximum allowable input to coinbase transaction, including the generation award and transaction fees (in satoshis)\n"
+            "  \"coinbasealertsminerfee\" : n,             (numeric) mandatory coinbase transaction output, which pays the fee to transaction alerts original miner (in satoshis)\n"
+            "  \"coinbasealertsminerpubkey\" : \"xxxx\",     (string) transaction alerts original miner public key encoded in little-endian hexadecimal\n"
+            "  \"coinbasetxn\" : { ... },                  (json object) information for coinbase transaction\n"
+            "  \"target\" : \"xxxx\",                        (string) The hash target\n"
+            "  \"mintime\" : xxx,                          (numeric) The minimum timestamp appropriate for next block time in seconds since epoch (Jan 1 1970 GMT)\n"
+            "  \"mutable\" : [                             (array of string) list of ways the block template may be changed \n"
+            "     \"value\"                                  (string) A way the block template may be changed, e.g. 'time', 'transactions', 'prevblock'\n"
             "     ,...\n"
             "  ],\n"
-            "  \"noncerange\" : \"00000000ffffffff\",(string) A range of valid nonces\n"
-            "  \"sigoplimit\" : n,                 (numeric) limit of sigops in blocks\n"
-            "  \"sizelimit\" : n,                  (numeric) limit of block size\n"
-            "  \"weightlimit\" : n,                (numeric) limit of block weight\n"
-            "  \"curtime\" : ttt,                  (numeric) current timestamp in seconds since epoch (Jan 1 1970 GMT)\n"
-            "  \"bits\" : \"xxxxxxxx\",              (string) compressed target of next block\n"
-            "  \"height\" : n                      (numeric) The height of the next block\n"
+            "  \"noncerange\" : \"00000000ffffffff\",      (string) A range of valid nonces\n"
+            "  \"sigoplimit\" : n,                       (numeric) limit of sigops in blocks\n"
+            "  \"sizelimit\" : n,                        (numeric) limit of block size\n"
+            "  \"weightlimit\" : n,                      (numeric) limit of block weight\n"
+            "  \"curtime\" : ttt,                        (numeric) current timestamp in seconds since epoch (Jan 1 1970 GMT)\n"
+            "  \"bits\" : \"xxxxxxxx\",                    (string) compressed target of next block\n"
+            "  \"height\" : n                            (numeric) The height of the next block\n"
             "}\n"
                 },
                 RPCExamples{
@@ -497,9 +518,8 @@ static UniValue getblocktemplate(const JSONRPCRequest& request)
         // TODO: Maybe recheck connections/IBD and (if something wrong) send an expires-immediately template to stop miners?
     }
 
-    const struct VBDeploymentInfo& segwit_info = VersionBitsDeploymentInfo[Consensus::DEPLOYMENT_SEGWIT];
     // GBT must be called with 'segwit' set in the rules or else blocks this miner creates will be rejected if containing segwit txs
-    if (setClientRules.count(segwit_info.name) != 1) {
+    if (setClientRules.count("segwit") != 1) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "getblocktemplate must be called with the segwit rule set (call with {\"rules\": [\"segwit\"]})");
     }
 
@@ -530,13 +550,14 @@ static UniValue getblocktemplate(const JSONRPCRequest& request)
     assert(pindexPrev);
     CBlock* pblock = &pblocktemplate->block; // pointer for convenience
     const Consensus::Params& consensusParams = Params().GetConsensus();
+    bool fAlertsEnabled = AreAlertsEnabled(pindexPrev->nHeight + 1, consensusParams.AlertsHeight);
 
     // Update nTime
     UpdateTime(pblock, consensusParams, pindexPrev);
     pblock->nNonce = 0;
 
     // NOTE: If at some point we support pre-segwit miners post-segwit-activation, this needs to take segwit support into consideration
-    const bool fPreSegWit = (ThresholdState::ACTIVE != VersionBitsState(pindexPrev, consensusParams, Consensus::DEPLOYMENT_SEGWIT, versionbitscache));
+    const bool fPreSegWit = (pindexPrev->nHeight + 1 < consensusParams.SegwitHeight);
 
     UniValue aCaps(UniValue::VARR); aCaps.push_back("proposal");
 
@@ -578,6 +599,38 @@ static UniValue getblocktemplate(const JSONRPCRequest& request)
         transactions.push_back(entry);
     }
 
+    UniValue transactionAlerts(UniValue::VARR);
+    if (fAlertsEnabled) {
+        std::map<uint256, int64_t> setAlertTxIndex;
+        int j = 0;
+        for (const auto &it : pblock->vatx) {
+            const CAlertTransaction &atx = *it;
+            uint256 atxHash = atx.GetHash();
+            setAlertTxIndex[atxHash] = j++;
+
+            UniValue entry(UniValue::VOBJ);
+            entry.pushKV("data", EncodeHexTx(atx));
+            entry.pushKV("txid", atxHash.GetHex());
+            entry.pushKV("hash", atx.GetWitnessHash().GetHex());
+
+            UniValue deps(UniValue::VARR);
+            for (const CTxIn &in : atx.vin) {
+                if (setAlertTxIndex.count(in.prevout.hash))
+                    deps.push_back(setAlertTxIndex[in.prevout.hash]);
+            }
+            entry.pushKV("depends", deps);
+            int64_t nAlertTxSigOps = pblocktemplate->vAlertTxSigOpsCost[j];
+            if (fPreSegWit) {
+                assert(nAlertTxSigOps % WITNESS_SCALE_FACTOR == 0);
+                nAlertTxSigOps /= WITNESS_SCALE_FACTOR;
+            }
+            entry.pushKV("sigops", nAlertTxSigOps);
+            entry.pushKV("weight", GetTransactionWeight(atx));
+
+            transactionAlerts.push_back(entry);
+        }
+    }
+
     UniValue aux(UniValue::VOBJ);
     aux.pushKV("flags", HexStr(COINBASE_FLAGS.begin(), COINBASE_FLAGS.end()));
 
@@ -592,6 +645,8 @@ static UniValue getblocktemplate(const JSONRPCRequest& request)
     result.pushKV("capabilities", aCaps);
 
     UniValue aRules(UniValue::VARR);
+    aRules.push_back("csv");
+    if (!fPreSegWit) aRules.push_back("!segwit");
     UniValue vbavailable(UniValue::VOBJ);
     for (int j = 0; j < (int)Consensus::MAX_VERSION_BITS_DEPLOYMENTS; ++j) {
         Consensus::DeploymentPos pos = Consensus::DeploymentPos(j);
@@ -648,8 +703,16 @@ static UniValue getblocktemplate(const JSONRPCRequest& request)
 
     result.pushKV("previousblockhash", pblock->hashPrevBlock.GetHex());
     result.pushKV("transactions", transactions);
+    if (fAlertsEnabled) {
+        result.pushKV("transactionalerts", transactionAlerts);
+        result.pushKV("transactionalertsmerkleroot", pblocktemplate->hashAlertsMerkleRoot.GetHex());
+    }
     result.pushKV("coinbaseaux", aux);
     result.pushKV("coinbasevalue", (int64_t)pblock->vtx[0]->vout[0].nValue);
+    if (fAlertsEnabled) {
+        result.pushKV("coinbasealertsminerfee", (int64_t)pblocktemplate->alertsMinerFee);
+        result.pushKV("coinbasealertsminerpubkey", HexStr(pblocktemplate->alertsMinerPubKey.begin(), pblocktemplate->alertsMinerPubKey.end()));
+    }
     result.pushKV("longpollid", chainActive.Tip()->GetBlockHash().GetHex() + i64tostr(nTransactionsUpdatedLast));
     result.pushKV("target", hashTarget.GetHex());
     result.pushKV("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1);
@@ -972,6 +1035,65 @@ static UniValue estimaterawfee(const JSONRPCRequest& request)
     return result;
 }
 
+/* ***************************************************************/
+/* Merge mining. */
+
+static UniValue createauxblock(const JSONRPCRequest& request) {
+	if (request.fHelp || request.params.size() != 1)
+		throw std::runtime_error(
+			RPCHelpMan{"createauxblock",
+				"\nCreates a new block and returns information required to merge-mine it.\n",
+				{
+					{"address", RPCArg::Type::STR, RPCArg::Optional::NO, "Payout address for the coinbase transaction"},
+				},
+				RPCResult{
+					"{\n"
+					"  \"hash\" : \"hash\", (string) Hash of the created block\n"
+					"  \"chainid\" : n, (numeric) Chain ID for this block\n"
+					"  \"previousblockhash\" : \"hash\", (string) Hash of the previous block\n"
+					"  \"coinbasevalue\" : n, (numeric) Value of the block's coinbase\n"
+					"  \"bits\" : \"xxxxxxxx\", (string) Compressed target of the block\n"
+					"  \"height\" : n, (numeric) Height of the block\n"
+					"}"
+				},
+				RPCExamples{
+					HelpExampleCli("createauxblock", "\"address\"") +
+					HelpExampleRpc("createauxblock", "\"address\"")
+				},
+			}.ToString());
+
+	const CTxDestination coinbaseScript = DecodeDestination(request.params[0].get_str());
+	if (!IsValidDestination(coinbaseScript))
+		throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error: Invalid coinbase payout address");
+	const CScript scriptPubKey = GetScriptForDestination(coinbaseScript);
+
+	return AuxpowMiner::get().createAuxBlock(request, scriptPubKey);
+}
+
+static UniValue submitauxblock(const JSONRPCRequest& request) {
+	if (request.fHelp || request.params.size() != 2)
+		throw std::runtime_error(
+			RPCHelpMan{"submitauxblock",
+				"\nSubmits a solved auxpow for a block that was previously created by 'createauxblock'.\n",
+				{
+					{"hash", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "Hash of the block to submit"},
+					{"auxpow", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "Serialised auxpow found"},
+				},
+				RPCResult{
+		            " (boolean) Whether the submitted block was correct\n"
+				},
+				RPCExamples{
+					HelpExampleCli("submitauxblock", "\"hash\" \"serialised auxpow\"") +
+					HelpExampleRpc("submitauxblock", "\"hash\" \"serialised auxpow\"")
+				},
+			}.ToString());
+
+	auto& hash = request.params[0].get_str();
+	auto& serialised_auxpow = request.params[1].get_str();
+
+	return AuxpowMiner::get().submitAuxBlock(request, hash, serialised_auxpow);
+}
+
 // clang-format off
 static const CRPCCommand commands[] =
 { //  category              name                      actor (function)         argNames
@@ -982,6 +1104,9 @@ static const CRPCCommand commands[] =
     { "mining",             "getblocktemplate",       &getblocktemplate,       {"template_request"} },
     { "mining",             "submitblock",            &submitblock,            {"hexdata","dummy"} },
     { "mining",             "submitheader",           &submitheader,           {"hexdata"} },
+
+	{ "mining",				"createauxblock",		  &createauxblock,		   {"address"} },
+	{ "mining",				"submitauxblock",		  &submitauxblock,		   {"hash", "auxpow"} },
 
 
     { "generating",         "generatetoaddress",      &generatetoaddress,      {"nblocks","address","maxtries"} },

@@ -58,7 +58,8 @@ public:
     };
 
     const Consensus::Params& GetConsensus() const { return consensus; }
-    const CMessageHeader::MessageStartChars& MessageStart() const { return pchMessageStart; }
+    const CMessageHeader::MessageStartChars& MessageStartNetwork() const { return pchMessageStartNetwork; }
+    const CMessageHeader::MessageStartChars& MessageStartDisk() const { return pchMessageStartDisk; }
     int GetDefaultPort() const { return nDefaultPort; }
 
     const CBlock& GenesisBlock() const { return genesis; }
@@ -88,7 +89,8 @@ protected:
     CChainParams() {}
 
     Consensus::Params consensus;
-    CMessageHeader::MessageStartChars pchMessageStart;
+    CMessageHeader::MessageStartChars pchMessageStartNetwork;
+    CMessageHeader::MessageStartChars pchMessageStartDisk;
     int nDefaultPort;
     uint64_t nPruneAfterHeight;
     uint64_t m_assumed_blockchain_size;

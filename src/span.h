@@ -57,4 +57,15 @@ constexpr Span<A> MakeSpan(A (&a)[N]) { return Span<A>(a, N); }
 template<typename V>
 constexpr Span<typename std::remove_pointer<decltype(std::declval<V>().data())>::type> MakeSpan(V& v) { return Span<typename std::remove_pointer<decltype(std::declval<V>().data())>::type>(v.data(), v.size()); }
 
+/** Pop the last element off a span, and return a reference to that element. */
+template <typename T>
+T& SpanPopBack(Span<T>& span)
+{
+    size_t size = span.size();
+    assert(size > 0);
+    T& back = span[size - 1];
+    span = Span<T>(span.data(), size - 1);
+    return back;
+}
+
 #endif

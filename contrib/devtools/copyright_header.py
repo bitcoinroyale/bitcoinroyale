@@ -93,6 +93,8 @@ EXPECTED_HOLDER_NAMES = [
     "Bitcoin Core Developers\n",
     "The Bitcoin Royale developers\n",
     "Bitcoin Royale Developers\n",
+    "The Bitcoin Vault developers\n",
+    "Bitcoin Vault Developers\n",
     "BitPay Inc\.\n",
     "University of Illinois at Urbana-Champaign\.\n",
     "Pieter Wuille\n",

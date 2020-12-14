@@ -340,19 +340,19 @@
 #define LT_OBJDIR ".libs/"
 
 /* Define to the address where bug reports for this package should be sent. */
-#define PACKAGE_BUGREPORT "https://github.com/bitcoinroyale/bitcoinroyale/issues"
+#define PACKAGE_BUGREPORT "https://github.com/bitcoinvault/bitcoinvault/issues"
 
 /* Define to the full name of this package. */
-#define PACKAGE_NAME "Bitcoin Royale"
+#define PACKAGE_NAME "Bitcoin Vault"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "Bitcoin Royale 0.17.99"
+#define PACKAGE_STRING "Bitcoin Vault 0.17.99"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "bitcoin"
 
 /* Define to the home page for this package. */
-#define PACKAGE_URL "https://bitcoinroyale.org/"
+#define PACKAGE_URL "https://bitcoinvault.global/"
 
 /* Define to the version of this package. */
 #define PACKAGE_VERSION "0.17.99"

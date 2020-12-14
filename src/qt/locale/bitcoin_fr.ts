@@ -3251,8 +3251,8 @@ Note : Les frais étant calculés par octet, des frais de « 100 satoshis par
         <translation>Impossible de démarrer le serveur HTTP. Voir le journal de débogage pour plus de détails.</translation>
     </message>
     <message>
-        <source>Bitcoin Royale</source>
-        <translation>Bitcoin Royale</translation>
+        <source>Bitcoin Vault</source>
+        <translation>Bitcoin Vault</translation>
     </message>
     <message>
         <source>The %s developers</source>

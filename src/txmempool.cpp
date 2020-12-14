@@ -457,7 +457,7 @@ void CTxMemPool::CalculateDescendants(txiter entryit, setEntries& setDescendants
     }
 }
 
-void CTxMemPool::removeRecursive(const CTransaction &origTx, MemPoolRemovalReason reason)
+void CTxMemPool::removeRecursive(const CBaseTransaction &origTx, MemPoolRemovalReason reason)
 {
     // Remove transaction from memory pool
     {
@@ -509,7 +509,7 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
                     continue;
                 const Coin &coin = pcoins->AccessCoin(txin.prevout);
                 if (nCheckFrequency != 0) assert(!coin.IsSpent());
-                if (coin.IsSpent() || (coin.IsCoinBase() && ((signed long)nMemPoolHeight) - coin.nHeight < COINBASE_MATURITY)) {
+                if (coin.IsConfirmed() || (coin.IsCoinBase() && ((signed long)nMemPoolHeight) - coin.nHeight < COINBASE_MATURITY)) {
                     txToRemove.insert(it);
                     break;
                 }
@@ -526,14 +526,14 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
     RemoveStaged(setAllRemoves, false, MemPoolRemovalReason::REORG);
 }
 
-void CTxMemPool::removeConflicts(const CTransaction &tx)
+void CTxMemPool::removeConflicts(const CBaseTransaction &tx)
 {
     // Remove transactions which depend on inputs of tx, recursively
     AssertLockHeld(cs);
     for (const CTxIn &txin : tx.vin) {
         auto it = mapNextTx.find(txin.prevout);
         if (it != mapNextTx.end()) {
-            const CTransaction &txConflict = *it->second;
+            const CBaseTransaction &txConflict = *it->second;
             if (txConflict != tx)
             {
                 ClearPrioritisation(txConflict.GetHash());
@@ -541,6 +541,16 @@ void CTxMemPool::removeConflicts(const CTransaction &tx)
             }
         }
     }
+}
+
+// TODO-fork: Temporary hack -> Consider creating a template which not cause the errors
+void CTxMemPool::removeForBlock(const std::vector<CAlertTransactionRef>& vatx, unsigned int nBlockHeight)
+{
+    std::vector<CTransactionRef> vtx = {};
+    for (auto & atx : vatx) {
+        vtx.emplace_back(MakeTransactionRef(CTransaction(CMutableTransaction(*atx))));
+    }
+    return removeForBlock(vtx, nBlockHeight);
 }
 
 /**
@@ -594,11 +604,12 @@ void CTxMemPool::clear()
     _clear();
 }
 
-static void CheckInputsAndUpdateCoins(const CTransaction& tx, CCoinsViewCache& mempoolDuplicate, const int64_t spendheight)
+static void CheckInputsAndUpdateCoins(const CBaseTransaction& tx, CCoinsViewCache& mempoolDuplicate, const int64_t spendheight)
 {
     CValidationState state;
     CAmount txfee = 0;
-    bool fCheckResult = tx.IsCoinBase() || Consensus::CheckTxInputs(tx, state, mempoolDuplicate, spendheight, txfee);
+    vaulttxntype txType = GetVaultTxType(tx, mempoolDuplicate);
+    bool fCheckResult = tx.IsCoinBase() || Consensus::CheckTxInputs(tx, state, mempoolDuplicate, spendheight, txfee, txType == TX_RECOVERY);
     assert(fCheckResult);
     UpdateCoins(tx, mempoolDuplicate, 1000000);
 }

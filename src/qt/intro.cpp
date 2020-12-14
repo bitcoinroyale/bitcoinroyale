@@ -126,7 +126,7 @@ Intro::Intro(QWidget *parent, uint64_t blockchain_size, uint64_t chain_state_siz
         .arg(tr(PACKAGE_NAME))
         .arg(m_blockchain_size)
         .arg(2019)
-        .arg(tr("Bitcoin Royale"))
+        .arg(tr("Bitcoin Vault"))
     );
     ui->lblExplanation2->setText(ui->lblExplanation2->text().arg(tr(PACKAGE_NAME)));
 
@@ -236,8 +236,8 @@ bool Intro::pickDataDirectory(interfaces::Node& node)
         settings.setValue("fReset", false);
     }
     /* Only override -datadir if different from the default, to make it possible to
-     * override -datadir in the broyale.conf file in the default data directory
-     * (to be consistent with broyaled behavior)
+     * override -datadir in the bvault.conf file in the default data directory
+     * (to be consistent with bvaultd behavior)
      */
     if(dataDir != getDefaultDataDirectory()) {
         node.softSetArg("-datadir", GUIUtil::qstringToBoostPath(dataDir).string()); // use OS locale for path setting

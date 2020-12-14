@@ -38,17 +38,17 @@ from the root of the repository.
 
 **Note**: You only need Berkeley DB if the wallet is enabled (see [*Disable-wallet mode*](/doc/build-osx.md#disable-wallet-mode)).
 
-Build Bitcoin Royale
+Build Bitcoin Vault
 ------------------------
 
-1. Clone the Bitcoin Royale source code:
+1. Clone the Bitcoin Vault source code:
 
-        git clone https://github.com/bitcoinroyale/bitcoinroyale
-        cd bitcoinroyale
+        git clone https://github.com/bitcoinvault/bitcoinvault
+        cd bitcoinvault
 
-2.  Build Bitcoin Royale:
+2.  Build Bitcoin Vault:
 
-    Configure and build the headless Bitcoin Royale binaries as well as the GUI (if Qt is found).
+    Configure and build the headless Bitcoin Vault binaries as well as the GUI (if Qt is found).
 
     You can disable the GUI build by passing `--without-gui` to configure.
 
@@ -66,7 +66,7 @@ Build Bitcoin Royale
 
 Disable-wallet mode
 --------------------
-When the intention is to run only a P2P node without a wallet, Bitcoin Royale may be compiled in
+When the intention is to run only a P2P node without a wallet, Bitcoin Vault may be compiled in
 disable-wallet mode with:
 
     ./configure --disable-wallet
@@ -78,17 +78,17 @@ Mining is also possible in disable-wallet mode using the `getblocktemplate` RPC 
 Running
 -------
 
-Bitcoin Royale is now available at `./src/broyaled`
+Bitcoin Vault is now available at `./src/bvaultd`
 
 Before running, you may create an empty configuration file:
 
-    mkdir -p "/Users/${USER}/Library/Application Support/BitcoinRoyale"
+    mkdir -p "/Users/${USER}/Library/Application Support/BitcoinVault"
 
-    touch "/Users/${USER}/Library/Application Support/BitcoinRoyale/broyale.conf"
+    touch "/Users/${USER}/Library/Application Support/BitcoinVault/bvault.conf"
 
-    chmod 600 "/Users/${USER}/Library/Application Support/BitcoinRoyale/broyale.conf"
+    chmod 600 "/Users/${USER}/Library/Application Support/BitcoinVault/bvault.conf"
 
-The first time you run broyaled, it will start downloading the blockchain. This process could take many hours, or even days on slower than average systems.
+The first time you run bvaultd, it will start downloading the blockchain. This process could take many hours, or even days on slower than average systems.
 
 You can monitor the download process by looking at the debug.log file:
 
@@ -97,9 +97,9 @@ You can monitor the download process by looking at the debug.log file:
 Other commands:
 -------
 
-    ./src/broyaled -daemon # Starts the bitcoin daemon.
-    ./src/broyale-cli --help # Outputs a list of command-line options.
-    ./src/broyale-cli help # Outputs a list of RPC commands when the daemon is running.
+    ./src/bvaultd -daemon # Starts the bitcoin daemon.
+    ./src/bvault-cli --help # Outputs a list of command-line options.
+    ./src/bvault-cli help # Outputs a list of RPC commands when the daemon is running.
 
 Notes
 -----

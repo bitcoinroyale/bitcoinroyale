@@ -2818,8 +2818,8 @@
         <translation>No se ha podido iniciar el servidor HTTP. Ver debug log para detalles.</translation>
     </message>
     <message>
-        <source>Bitcoin Royale</source>
-        <translation>bitcoin royale</translation>
+        <source>Bitcoin Vault</source>
+        <translation>bitcoin vault</translation>
     </message>
     <message>
         <source>The %s developers</source>

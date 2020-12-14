@@ -47,10 +47,10 @@ static const int MAX_URI_LENGTH = 255;
 #define SPINNER_FRAMES 36
 
 #define QAPP_ORG_NAME "Bitcoin"
-#define QAPP_ORG_DOMAIN "bitcoinroyale.org"
-#define QAPP_APP_NAME_DEFAULT "BRoyale-Qt"
-#define QAPP_APP_NAME_TESTNET "BRoyale-Qt-testnet"
-#define QAPP_APP_NAME_REGTEST "BRoyale-Qt-regtest"
+#define QAPP_ORG_DOMAIN "bitcoinvault.global"
+#define QAPP_APP_NAME_DEFAULT "BVault-Qt"
+#define QAPP_APP_NAME_TESTNET "BVault-Qt-testnet"
+#define QAPP_APP_NAME_REGTEST "BVault-Qt-regtest"
 
 /* One gigabyte (GB) in bytes */
 static constexpr uint64_t GB_BYTES{1000000000};

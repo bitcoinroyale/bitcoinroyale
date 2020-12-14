@@ -13,6 +13,8 @@
 
 #include <stdint.h>
 
+typedef std::vector<unsigned char> valtype;
+
 static const bool DEFAULT_ACCEPT_DATACARRIER = true;
 
 class CKeyID;
@@ -65,6 +67,26 @@ enum txnouttype
     TX_WITNESS_V0_SCRIPTHASH,
     TX_WITNESS_V0_KEYHASH,
     TX_WITNESS_UNKNOWN, //!< Only for Witness versions not already defined above
+    TX_VAULT_ALERTADDRESS,
+    TX_VAULT_INSTANTADDRESS,
+};
+
+enum vaulttxntype
+{
+    TX_INVALID, // invalid vault tx - alert inputs mixed with others
+    TX_NONVAULT, // tx from regular address
+    // valid vault tx types
+    TX_ALERT,
+    TX_INSTANT,
+    TX_RECOVERY,
+};
+
+enum vaulttxnstatus
+{
+    TX_PENDING,
+    TX_CONFIRMED,
+    TX_RECOVERED,
+    TX_UNKNOWN
 };
 
 class CNoDestination {
@@ -127,6 +149,7 @@ bool IsValidDestination(const CTxDestination& dest);
 
 /** Get the name of a txnouttype as a C string, or nullptr if unknown. */
 const char* GetTxnOutputType(txnouttype t);
+const char* GetTxnOutputType(vaulttxntype t);
 
 /**
  * Parse a scriptPubKey and identify script type for standard scripts. If
@@ -175,6 +198,9 @@ CScript GetScriptForRawPubKey(const CPubKey& pubkey);
 /** Generate a multisig script. */
 CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys);
 
+/** Generate an alert address script. */
+CScript GetScriptForVaultAddress(const std::vector<CPubKey>& keys, bool instant = false);
+
 /**
  * Generate a pay-to-witness script for the given redeem script. If the redeem
  * script is P2PK or P2PKH, this returns a P2WPKH script, otherwise it returns a
@@ -184,5 +210,9 @@ CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys);
  * the various witness-specific CTxDestination subtypes.
  */
 CScript GetScriptForWitness(const CScript& redeemscript);
+
+bool MatchAlertAddress(const CScript& script, std::vector<valtype>& pubkeys);
+
+bool MatchInstantAlertAddress(const CScript& script, std::vector<valtype>& pubkeys);
 
 #endif // BITCOIN_SCRIPT_STANDARD_H

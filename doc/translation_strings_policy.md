@@ -1,7 +1,7 @@
 Translation Strings Policy
 ===========================
 
-This document provides guidelines for internationalization of the Bitcoin Royale software.
+This document provides guidelines for internationalization of the Bitcoin Vault software.
 
 How to translate?
 ------------------

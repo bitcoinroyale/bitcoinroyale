@@ -1,7 +1,7 @@
 Contributing to this implementation
 ===================================
 
-This implementation of Bitcoin Royale operates an open contributor model where anyone is
+This implementation of Bitcoin Vault operates an open contributor model where anyone is
 welcome to contribute towards development in the form of peer review, testing
 and patches. This document explains the practical process and guidelines for
 contributing.
@@ -75,7 +75,7 @@ the pull request affects. Valid areas as:
 
   - *Consensus* for changes to consensus critical code
   - *Docs* for changes to the documentation
-  - *Qt* for changes to broyale-qt
+  - *Qt* for changes to bvault-qt
   - *Mining* for changes to the mining code
   - *Net* or *P2P* for changes to the peer-to-peer network code
   - *RPC/REST/ZMQ* for changes to the RPC, REST or ZMQ APIs
@@ -100,7 +100,7 @@ Examples:
     Trivial: Fix typo in init.cpp
 
 Note that translations should not be submitted as pull requests, please see
-[Translation Process](https://github.com/bitcoinroyale/bitcoinroyale/blob/master/doc/translation_process.md) 
+[Translation Process](https://github.com/bitcoinvault/bitcoinvault/blob/master/doc/translation_process.md) 
 for more information on helping with translations.
 
 If a pull request is not to be considered for merging (yet), please
@@ -194,7 +194,7 @@ workload on reviewing.
 -------------------------
 
 The following applies to code changes to this implementation project, and is not to be confused with overall Bitcoin
-Royale Network Protocol consensus changes.
+Vault Network Protocol consensus changes.
 
 Whether a pull request is merged into the codebase rests with the project merge
 maintainers and ultimately the project lead.

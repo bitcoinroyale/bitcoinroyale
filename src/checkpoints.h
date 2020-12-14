@@ -20,6 +20,7 @@ namespace Checkpoints
 {
 
 //! Returns last CBlockIndex* that is a checkpoint
+bool CheckBlock(const CCheckpointData &data, int nHeight, const uint256 &hash);
 CBlockIndex* GetLastCheckpoint(const CCheckpointData& data);
 
 } //namespace Checkpoints

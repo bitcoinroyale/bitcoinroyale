@@ -568,6 +568,17 @@ public:
     MultisigDescriptor(int threshold, std::vector<std::unique_ptr<PubkeyProvider>> providers) : DescriptorImpl(std::move(providers), {}, "multi"), m_threshold(threshold) {}
 };
 
+/** A parsed vault(...) descriptor. */
+class VaultAddressDescriptor final : public DescriptorImpl
+{
+    const bool instant;
+protected:
+    std::string ToStringExtra() const override { return strprintf("%s", instant); }
+    std::vector<CScript> MakeScripts(const std::vector<CPubKey>& keys, const CScript*, FlatSigningProvider&) const override { return Singleton(GetScriptForVaultAddress(keys, instant)); }
+public:
+    VaultAddressDescriptor(std::vector<std::unique_ptr<PubkeyProvider>> providers, bool instantIn) : DescriptorImpl(std::move(providers), {}, "vault"), instant(instantIn) {}
+};
+
 /** A parsed sh(...) descriptor. */
 class SHDescriptor final : public DescriptorImpl
 {
@@ -845,6 +856,22 @@ std::unique_ptr<DescriptorImpl> InferScript(const CScript& script, ParseScriptCo
             providers.push_back(InferPubkey(pubkey, ctx, provider));
         }
         return MakeUnique<MultisigDescriptor>((int)data[0][0], std::move(providers));
+    }
+    if (txntype == TX_VAULT_ALERTADDRESS) {
+        std::vector<std::unique_ptr<PubkeyProvider>> providers;
+        for (size_t i = 0; i < data.size(); i++) {
+            CPubKey pubkey(data[i].begin(), data[i].end());
+            providers.push_back(InferPubkey(pubkey, ctx, provider));
+        }
+        return MakeUnique<VaultAddressDescriptor>(std::move(providers), false);
+    }
+    if (txntype == TX_VAULT_INSTANTADDRESS) {
+        std::vector<std::unique_ptr<PubkeyProvider>> providers;
+        for (size_t i = 0; i < data.size(); i++) {
+            CPubKey pubkey(data[i].begin(), data[i].end());
+            providers.push_back(InferPubkey(pubkey, ctx, provider));
+        }
+        return MakeUnique<VaultAddressDescriptor>(std::move(providers), true);
     }
     if (txntype == TX_SCRIPTHASH && ctx == ParseScriptContext::TOP) {
         uint160 hash(data[0]);

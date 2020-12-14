@@ -350,7 +350,7 @@ static bool rest_tx(HTTPRequest* req, const std::string& strURIPart)
         g_txindex->BlockUntilSyncedToCurrentChain();
     }
 
-    CTransactionRef tx;
+    CBaseTransactionRef tx;
     uint256 hashBlock = uint256();
     if (!GetTransaction(hash, tx, Params().GetConsensus(), hashBlock))
         return RESTERR(req, HTTP_NOT_FOUND, hashStr + " not found");

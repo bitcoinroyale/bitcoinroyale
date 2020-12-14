@@ -1,11 +1,11 @@
 # It is not recommended to modify this file in-place, because it will
 # be overwritten during package upgrades. If you want to add further
 # options or overwrite existing ones then use
-# $ systemctl edit broyaled.service
+# $ systemctl edit bvaultd.service
 # See "man systemd.service" for details.
 
 # Note that almost all daemon options could be specified in
-# /etc/bitcoin/broyale.conf, except for those explicitly specified as arguments
+# /etc/bitcoin/bvault.conf, except for those explicitly specified as arguments
 # in ExecStart=
 
 [Unit]
@@ -13,16 +13,16 @@ Description=Bitcoin daemon
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/broyaled -daemon \
-                            -pid=/run/broyaled/broyaled.pid \
-                            -conf=/etc/bitcoin/broyale.conf \
-                            -datadir=/var/lib/broyaled
+ExecStart=/usr/bin/bvaultd -daemon \
+                            -pid=/run/bvaultd/bvaultd.pid \
+                            -conf=/etc/bitcoin/bvault.conf \
+                            -datadir=/var/lib/bvaultd
 
 # Process management
 ####################
 
 Type=forking
-PIDFile=/run/broyaled/broyaled.pid
+PIDFile=/run/bvaultd/bvaultd.pid
 Restart=on-failure
 
 # Directory creation and permissions
@@ -32,16 +32,16 @@ Restart=on-failure
 User=bitcoin
 Group=bitcoin
 
-# /run/broyaled
-RuntimeDirectory=broyaled
+# /run/bvaultd
+RuntimeDirectory=bvaultd
 RuntimeDirectoryMode=0710
 
 # /etc/bitcoin
 ConfigurationDirectory=bitcoin
 ConfigurationDirectoryMode=0710
 
-# /var/lib/broyaled
-StateDirectory=broyaled
+# /var/lib/bvaultd
+StateDirectory=bvaultd
 StateDirectoryMode=0710
 
 # Hardening measures

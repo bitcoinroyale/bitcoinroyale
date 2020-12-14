@@ -45,7 +45,7 @@ BOOST_AUTO_TEST_CASE(pmt_test1)
         }
 
         // calculate actual merkle root and height
-        uint256 merkleRoot1 = BlockMerkleRoot(block);
+        uint256 merkleRoot1 = BlockMerkleRoot(block.vtx);
         std::vector<uint256> vTxid(nTx, uint256());
         for (unsigned int j=0; j<nTx; j++)
             vTxid[j] = block.vtx[j]->GetHash();

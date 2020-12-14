@@ -1196,7 +1196,7 @@ void static ProcessGetBlockData(CNode* pfrom, const CChainParams& chainparams, c
             // Fast-path: in this case it is possible to serve the block directly from disk,
             // as the network format matches the format on disk
             std::vector<uint8_t> block_data;
-            if (!ReadRawBlockFromDisk(block_data, pindex, chainparams.MessageStart())) {
+            if (!ReadRawBlockFromDisk(block_data, pindex, chainparams.MessageStartDisk())) {
                 assert(!"cannot load block from disk");
             }
             connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::BLOCK, MakeSpan(block_data)));
@@ -1355,6 +1355,14 @@ inline void static SendBlockTransactions(const CBlock& block, const BlockTransac
             return;
         }
         resp.txn[i] = block.vtx[req.indexes[i]];
+    }
+    for (size_t i = 0; i < req.aindexes.size(); i++) {
+        if (req.aindexes[i] >= block.vatx.size()) {
+            LOCK(cs_main);
+            Misbehaving(pfrom->GetId(), 100, strprintf("Peer %d sent us a getblocktxn with out-of-bounds atx indices", pfrom->GetId()));
+            return;
+        }
+        resp.atxn[i] = block.vatx[req.aindexes[i]];
     }
     LOCK(cs_main);
     const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
@@ -2485,6 +2493,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         if (pindex->nStatus & BLOCK_HAVE_DATA) // Nothing to do here
             return true;
 
+        // TODO-fork: add nAlertTx to CBlockIndex
         if (pindex->nChainWork <= chainActive.Tip()->nChainWork || // We know something better
                 pindex->nTx != 0) { // We had this block at some point, but pruned it
             if (fAlreadyInFlight) {
@@ -2542,7 +2551,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     if (!partialBlock.IsTxAvailable(i))
                         req.indexes.push_back(i);
                 }
-                if (req.indexes.empty()) {
+                for (size_t i = 0; i < cmpctblock.BlockAlertTxCount(); i++) {
+                    if (!partialBlock.IsAlertTxAvailable(i))
+                        req.aindexes.push_back(i);
+                }
+                if (req.indexes.empty() && req.aindexes.empty()) {
                     // Dirty hack to jump to BLOCKTXN code (TODO: move message handling into their own functions)
                     BlockTransactions txn;
                     txn.blockhash = cmpctblock.header.GetHash();
@@ -2564,8 +2577,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     // TODO: don't ignore failures
                     return true;
                 }
-                std::vector<CTransactionRef> dummy;
-                status = tempBlock.FillBlock(*pblock, dummy);
+                std::vector<CTransactionRef> txDummy;
+                std::vector<CAlertTransactionRef> atxDummy;
+                status = tempBlock.FillBlock(*pblock, txDummy, atxDummy);
                 if (status == READ_STATUS_OK) {
                     fBlockReconstructed = true;
                 }
@@ -2651,7 +2665,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             }
 
             PartiallyDownloadedBlock& partialBlock = *it->second.second->partialBlock;
-            ReadStatus status = partialBlock.FillBlock(*pblock, resp.txn);
+            ReadStatus status = partialBlock.FillBlock(*pblock, resp.txn, resp.atxn);
             if (status == READ_STATUS_INVALID) {
                 MarkBlockAsReceived(resp.blockhash); // Reset in-flight state in case of whitelist
                 Misbehaving(pfrom->GetId(), 100, strprintf("Peer %d sent us invalid compact block/non-matching block transactions\n", pfrom->GetId()));
@@ -2737,6 +2751,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     {
         std::shared_ptr<CBlock> pblock = std::make_shared<CBlock>();
         vRecv >> *pblock;
+        // If block height is over AlertsHeight unserialize alerts
+        int nHeight = pblock->GetHash() != chainparams.GetConsensus().hashGenesisBlock ? GetCoinbaseHeight(*pblock) : 0;
+        pblock->fAlertsSerialization = AreAlertsEnabled(nHeight, chainparams.GetConsensus().AlertsHeight);
+        if (pblock->fAlertsSerialization) {
+            pblock->UnserializeAlerts(vRecv);
+        }
 
         LogPrint(BCLog::NET, "received block %s peer=%d\n", pblock->GetHash().ToString(), pfrom->GetId());
 
@@ -3051,7 +3071,7 @@ bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& inter
 
     msg.SetVersion(pfrom->GetRecvVersion());
     // Scan for message start
-    if (memcmp(msg.hdr.pchMessageStart, chainparams.MessageStart(), CMessageHeader::MESSAGE_START_SIZE) != 0) {
+    if (memcmp(msg.hdr.pchMessageStart, chainparams.MessageStartNetwork(), CMessageHeader::MESSAGE_START_SIZE) != 0) {
         LogPrint(BCLog::NET, "PROCESSMESSAGE: INVALID MESSAGESTART %s peer=%d\n", SanitizeString(msg.hdr.GetCommand()), pfrom->GetId());
         pfrom->fDisconnect = true;
         return false;
@@ -3059,7 +3079,7 @@ bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& inter
 
     // Read header
     CMessageHeader& hdr = msg.hdr;
-    if (!hdr.IsValid(chainparams.MessageStart()))
+    if (!hdr.IsValid(chainparams.MessageStartNetwork()))
     {
         LogPrint(BCLog::NET, "PROCESSMESSAGE: ERRORS IN HEADER %s peer=%d\n", SanitizeString(hdr.GetCommand()), pfrom->GetId());
         return fMoreWork;

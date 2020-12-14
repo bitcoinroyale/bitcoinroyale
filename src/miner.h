@@ -30,6 +30,10 @@ struct CBlockTemplate
     CBlock block;
     std::vector<CAmount> vTxFees;
     std::vector<int64_t> vTxSigOpsCost;
+    std::vector<int64_t> vAlertTxSigOpsCost;
+    CAmount alertsMinerFee;
+    CScript alertsMinerPubKey;
+    uint256 hashAlertsMerkleRoot;
     std::vector<unsigned char> vchCoinbaseCommitment;
 };
 
@@ -139,14 +143,19 @@ private:
     // Information on the current status of the block
     uint64_t nBlockWeight;
     uint64_t nBlockTx;
+    uint64_t nBlockAlertTx;
     uint64_t nBlockSigOpsCost;
     CAmount nFees;
+    CAmount nAncestorAlertsFees;
     CTxMemPool::setEntries inBlock;
 
     // Chain context for the block
     int nHeight;
     int64_t nLockTimeCutoff;
     const CChainParams& chainparams;
+
+    // Helpers
+    std::vector<int> blockRecoveryTxsIdx;
 
 public:
     struct Options {
@@ -162,22 +171,30 @@ public:
     std::unique_ptr<CBlockTemplate> CreateNewBlock(const CScript& scriptPubKeyIn);
 
     static Optional<int64_t> m_last_block_num_txs;
+    static Optional<int64_t> m_last_block_num_atxs;
     static Optional<int64_t> m_last_block_weight;
 
 private:
     // utility functions
     /** Clear the block's state and prepare for assembling a new block */
     void resetBlock();
+    /** Add a tx to the block from alert */
+    void AddTxToBlock(const CAlertTransactionRef& atx, const CCoinsViewCache& view);
     /** Add a tx to the block */
-    void AddToBlock(CTxMemPool::txiter iter);
+    void AddTxToBlock(CTxMemPool::txiter iter);
+    /** Add an alert tx to the block */
+    void AddAlertTxToBlock(CTxMemPool::txiter iter);
+
+    // Methods for how to add alerted transactions to a block.
+    void addTxsFromAlerts(const CBlock& ancestorBlock, const Consensus::Params& params);
 
     // Methods for how to add transactions to a block.
     /** Add transactions based on feerate including unconfirmed ancestors
       * Increments nPackagesSelected / nDescendantsUpdated with corresponding
       * statistics from the package selection (for logging statistics). */
-    void addPackageTxs(int &nPackagesSelected, int &nDescendantsUpdated) EXCLUSIVE_LOCKS_REQUIRED(mempool.cs);
+    void addPackageTxs(int &nPackagesSelected, int &nDescendantsUpdated, const bool alertsEnabled = true) EXCLUSIVE_LOCKS_REQUIRED(mempool.cs);
 
-    // helper functions for addPackageTxs()
+    // helper functions for addPackageAlertTxs()
     /** Remove confirmed (inBlock) entries from given set */
     void onlyUnconfirmed(CTxMemPool::setEntries& testSet);
     /** Test if a new package would "fit" in the block */
@@ -199,7 +216,7 @@ private:
 };
 
 /** Modify the extranonce in a block */
-void IncrementExtraNonce(CBlock* pblock, const CBlockIndex* pindexPrev, unsigned int& nExtraNonce);
+void IncrementExtraNonce(CBlock* pblock, const CBlockIndex* pindexPrev, unsigned int& nExtraNonce, const Consensus::Params& consensusParams);
 int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev);
 
 #endif // BITCOIN_MINER_H

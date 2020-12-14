@@ -25,7 +25,7 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
     def run_test(self):
         node0,node1,node2 = self.nodes
 
-        # 50 BTCR each, rest will be 25 BTCR each
+        # 50 BTCV each, rest will be 25 BTCV each
         node0.generate(149)
         self.sync_all()
 

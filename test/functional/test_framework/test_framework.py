@@ -106,9 +106,9 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
 
         parser = argparse.ArgumentParser(usage="%(prog)s [options]")
         parser.add_argument("--nocleanup", dest="nocleanup", default=False, action="store_true",
-                            help="Leave broyaleds and test.* datadir on exit or error")
+                            help="Leave bvaultds and test.* datadir on exit or error")
         parser.add_argument("--noshutdown", dest="noshutdown", default=False, action="store_true",
-                            help="Don't stop broyaleds after the test execution")
+                            help="Don't stop bvaultds after the test execution")
         parser.add_argument("--cachedir", dest="cachedir", default=os.path.abspath(os.path.dirname(os.path.realpath(__file__)) + "/../../cache"),
                             help="Directory for caching pregenerated datadirs (default: %(default)s)")
         parser.add_argument("--tmpdir", dest="tmpdir", help="Root directory for datadirs")
@@ -126,7 +126,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         parser.add_argument("--pdbonfailure", dest="pdbonfailure", default=False, action="store_true",
                             help="Attach a python debugger if test fails")
         parser.add_argument("--usecli", dest="usecli", default=False, action="store_true",
-                            help="use broyale-cli instead of RPC for all commands")
+                            help="use bvault-cli instead of RPC for all commands")
         parser.add_argument("--perf", dest="perf", default=False, action="store_true",
                             help="profile running nodes with perf for the duration of the test")
         self.add_options(parser)
@@ -141,8 +141,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         config = configparser.ConfigParser()
         config.read_file(open(self.options.configfile))
         self.config = config
-        self.options.broyaled = os.getenv("BROYALED", default=config["environment"]["BUILDDIR"] + '/src/broyaled' + config["environment"]["EXEEXT"])
-        self.options.bitcoincli = os.getenv("BITCOINCLI", default=config["environment"]["BUILDDIR"] + '/src/broyale-cli' + config["environment"]["EXEEXT"])
+        self.options.bvaultd = os.getenv("BVAULTD", default=config["environment"]["BUILDDIR"] + '/src/bvaultd' + config["environment"]["EXEEXT"])
+        self.options.bitcoincli = os.getenv("BITCOINCLI", default=config["environment"]["BUILDDIR"] + '/src/bvault-cli' + config["environment"]["EXEEXT"])
 
         os.environ['PATH'] = os.pathsep.join([
             os.path.join(config['environment']['BUILDDIR'], 'src'),
@@ -201,7 +201,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         else:
             for node in self.nodes:
                 node.cleanup_on_exit = False
-            self.log.info("Note: broyaleds were not stopped and may still be running")
+            self.log.info("Note: bvaultds were not stopped and may still be running")
 
         should_clean_up = (
             not self.options.nocleanup and
@@ -316,7 +316,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         if extra_args is None:
             extra_args = [[]] * num_nodes
         if binary is None:
-            binary = [self.options.broyaled] * num_nodes
+            binary = [self.options.bvaultd] * num_nodes
         assert_equal(len(extra_confs), num_nodes)
         assert_equal(len(extra_args), num_nodes)
         assert_equal(len(binary), num_nodes)
@@ -326,7 +326,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 get_datadir_path(self.options.tmpdir, i),
                 rpchost=rpchost,
                 timewait=self.rpc_timeout,
-                broyaled=binary[i],
+                bvaultd=binary[i],
                 bitcoin_cli=self.options.bitcoincli,
                 coverage_dir=self.options.coveragedir,
                 cwd=self.options.tmpdir,
@@ -337,7 +337,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             ))
 
     def start_node(self, i, *args, **kwargs):
-        """Start a broyaled"""
+        """Start a bvaultd"""
 
         node = self.nodes[i]
 
@@ -348,7 +348,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             coverage.write_all_rpc_commands(self.options.coveragedir, node.rpc)
 
     def start_nodes(self, extra_args=None, *args, **kwargs):
-        """Start multiple broyaleds"""
+        """Start multiple bvaultds"""
 
         if extra_args is None:
             extra_args = [None] * self.num_nodes
@@ -368,12 +368,12 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 coverage.write_all_rpc_commands(self.options.coveragedir, node.rpc)
 
     def stop_node(self, i, expected_stderr='', wait=0):
-        """Stop a broyaled test node"""
+        """Stop a bvaultd test node"""
         self.nodes[i].stop_node(expected_stderr, wait=wait)
         self.nodes[i].wait_until_stopped()
 
     def stop_nodes(self, wait=0):
-        """Stop multiple broyaled test nodes"""
+        """Stop multiple bvaultd test nodes"""
         for node in self.nodes:
             # Issue RPC to stop nodes
             node.stop_node(wait=wait)
@@ -427,7 +427,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         # User can provide log level as a number or string (eg DEBUG). loglevel was caught as a string, so try to convert it to an int
         ll = int(self.options.loglevel) if self.options.loglevel.isdigit() else self.options.loglevel.upper()
         ch.setLevel(ll)
-        # Format logs the same as broyaled's debug.log with microprecision (so log files can be concatenated and sorted)
+        # Format logs the same as bvaultd's debug.log with microprecision (so log files can be concatenated and sorted)
         formatter = logging.Formatter(fmt='%(asctime)s.%(msecs)03d000Z %(name)s (%(levelname)s): %(message)s', datefmt='%Y-%m-%dT%H:%M:%S')
         formatter.converter = time.gmtime
         fh.setFormatter(formatter)
@@ -464,10 +464,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 if os.path.isdir(get_datadir_path(self.options.cachedir, i)):
                     shutil.rmtree(get_datadir_path(self.options.cachedir, i))
 
-            # Create cache directories, run broyaleds:
+            # Create cache directories, run bvaultds:
             for i in range(MAX_NODES):
                 datadir = initialize_datadir(self.options.cachedir, i)
-                args = [self.options.broyaled, "-datadir=" + datadir, '-disablewallet']
+                args = [self.options.bvaultd, "-datadir=" + datadir, '-disablewallet']
                 if i > 0:
                     args.append("-connect=127.0.0.1:" + str(p2p_port(0)))
                 self.nodes.append(TestNode(
@@ -477,7 +477,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                     extra_args=[],
                     rpchost=None,
                     timewait=self.rpc_timeout,
-                    broyaled=self.options.broyaled,
+                    bvaultd=self.options.bvaultd,
                     bitcoin_cli=self.options.bitcoincli,
                     coverage_dir=None,
                     cwd=self.options.tmpdir,
@@ -519,7 +519,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             from_dir = get_datadir_path(self.options.cachedir, i)
             to_dir = get_datadir_path(self.options.tmpdir, i)
             shutil.copytree(from_dir, to_dir)
-            initialize_datadir(self.options.tmpdir, i)  # Overwrite port/rpcport in broyale.conf
+            initialize_datadir(self.options.tmpdir, i)  # Overwrite port/rpcport in bvault.conf
 
     def _initialize_chain_clean(self):
         """Initialize empty blockchain for use by the test.
@@ -536,10 +536,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         except ImportError:
             raise SkipTest("python3-zmq module not available.")
 
-    def skip_if_no_broyaled_zmq(self):
-        """Skip the running test if broyaled has not been compiled with zmq support."""
+    def skip_if_no_bvaultd_zmq(self):
+        """Skip the running test if bvaultd has not been compiled with zmq support."""
         if not self.is_zmq_compiled():
-            raise SkipTest("broyaled has not been built with zmq enabled.")
+            raise SkipTest("bvaultd has not been built with zmq enabled.")
 
     def skip_if_no_wallet(self):
         """Skip the running test if wallet has not been compiled."""
@@ -547,12 +547,12 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             raise SkipTest("wallet has not been compiled.")
 
     def skip_if_no_cli(self):
-        """Skip the running test if broyale-cli has not been compiled."""
+        """Skip the running test if bvault-cli has not been compiled."""
         if not self.is_cli_compiled():
-            raise SkipTest("broyale-cli has not been compiled.")
+            raise SkipTest("bvault-cli has not been compiled.")
 
     def is_cli_compiled(self):
-        """Checks whether broyale-cli was compiled."""
+        """Checks whether bvault-cli was compiled."""
         config = configparser.ConfigParser()
         config.read_file(open(self.options.configfile))
 

@@ -28,6 +28,7 @@ extern InitInterfaces* g_rpc_interfaces;
 
 CPubKey HexToPubKey(const std::string& hex_in);
 CPubKey AddrToPubKey(CKeyStore* const keystore, const std::string& addr_in);
+CScript CreateVaultAddressRedeemscript(const std::vector<CPubKey>& pubkeys, bool instant);
 CScript CreateMultisigRedeemscript(const int required, const std::vector<CPubKey>& pubkeys);
 
 UniValue DescribeAddress(const CTxDestination& dest);

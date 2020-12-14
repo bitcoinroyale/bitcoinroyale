@@ -60,7 +60,7 @@ void test_one_input(std::vector<uint8_t> buffer)
                 CBlock block;
                 ds >> block;
                 bool mutated;
-                BlockMerkleRoot(block, &mutated);
+                BlockMerkleRoot(block.vtx, &mutated);
             } catch (const std::ios_base::failure& e) {return;}
 #elif ADDRMAN_DESERIALIZE
             try

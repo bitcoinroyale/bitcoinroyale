@@ -38,7 +38,7 @@ const std::function<std::string(const char*)> G_TRANSLATION_FUN = nullptr;
  *
  * The software is a community-driven open source project, released under the MIT license.
  *
- * See https://github.com/bitcoinroyale/bitcoinroyale and https://bitcoinroyale.org/ for further information about the project.
+ * See https://github.com/bitcoinvault/bitcoinvault and https://bitcoinvault.global/ for further information about the project.
  *
  * \section Navigation
  * Use the buttons <code>Namespaces</code>, <code>Classes</code> or <code>Files</code> at the top of the page to start navigating the code.
@@ -67,7 +67,7 @@ static bool AppInit(int argc, char* argv[])
     //
     // Parameters
     //
-    // If Qt is used, parameters/broyale.conf are parsed in qt/bitcoin.cpp's main()
+    // If Qt is used, parameters/bvault.conf are parsed in qt/bitcoin.cpp's main()
     SetupServerArgs();
     std::string error;
     if (!gArgs.ParseParameters(argc, argv, error)) {
@@ -85,7 +85,7 @@ static bool AppInit(int argc, char* argv[])
         }
         else
         {
-            strUsage += "\nUsage:  broyaled [options]                     Start " PACKAGE_NAME " Daemon\n";
+            strUsage += "\nUsage:  bvaultd [options]                     Start " PACKAGE_NAME " Daemon\n";
             strUsage += "\n" + gArgs.GetHelpMessage();
         }
 
@@ -115,12 +115,12 @@ static bool AppInit(int argc, char* argv[])
         // Error out when loose non-argument tokens are encountered on command line
         for (int i = 1; i < argc; i++) {
             if (!IsSwitchChar(argv[i][0])) {
-                fprintf(stderr, "Error: Command line contains unexpected token '%s', see broyaled -h for a list of options.\n", argv[i]);
+                fprintf(stderr, "Error: Command line contains unexpected token '%s', see bvaultd -h for a list of options.\n", argv[i]);
                 return false;
             }
         }
 
-        // -server defaults to true for broyaled but not for the GUI so do this here
+        // -server defaults to true for bvaultd but not for the GUI so do this here
         gArgs.SoftSetBoolArg("-server", true);
         // Set this early so that parameter interactions go to console
         InitLogging();
@@ -147,7 +147,7 @@ static bool AppInit(int argc, char* argv[])
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
-            fprintf(stdout, "Bitcoin Royale server starting\n");
+            fprintf(stdout, "Bitcoin Vault server starting\n");
 
             // Daemonize
             if (daemon(1, 0)) { // don't chdir (1), do close FDs (0)
@@ -195,7 +195,7 @@ int main(int argc, char* argv[])
 #endif
     SetupEnvironment();
 
-    // Connect broyaled signal handlers
+    // Connect bvaultd signal handlers
     noui_connect();
 
     return (AppInit(argc, argv) ? EXIT_SUCCESS : EXIT_FAILURE);

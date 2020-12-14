@@ -102,12 +102,19 @@ class CBlockUndo
 {
 public:
     std::vector<CTxUndo> vtxundo; // for all but the coinbase
+    std::vector<CTxUndo> vatxundo; // for alerts only
+
+    // memory only
+    mutable bool fAlertsSerialization;
 
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(vtxundo);
+        if (fAlertsSerialization)
+            READWRITE(vatxundo);
+
     }
 };
 

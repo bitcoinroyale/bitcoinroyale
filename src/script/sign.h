@@ -10,6 +10,7 @@
 #include <hash.h>
 #include <pubkey.h>
 #include <script/interpreter.h>
+#include <script/standard.h>
 #include <streams.h>
 
 class CKey;
@@ -17,6 +18,7 @@ class CKeyID;
 class CScript;
 class CScriptID;
 class CTransaction;
+class CBasicKeyStore;
 
 struct CMutableTransaction;
 
@@ -141,6 +143,21 @@ struct SignatureData {
     void MergeSignatureData(SignatureData sigdata);
 };
 
+typedef std::vector<unsigned char> valtype;
+
+struct Stacks
+{
+    std::vector<valtype> script;
+    std::vector<valtype> witness;
+
+    Stacks() = delete;
+    Stacks(const Stacks&) = delete;
+    explicit Stacks(const SignatureData& data) : witness(data.scriptWitness.stack) {
+        EvalScript(script, data.scriptSig, SCRIPT_VERIFY_STRICTENC, BaseSignatureChecker(), SigVersion::BASE);
+    }
+};
+
+
 // Takes a stream and multiple arguments and serializes them as if first serialized into a vector and then into the stream
 // The resulting output into the stream has the total serialized length of all of the objects followed by all objects concatenated with each other.
 template<typename Stream, typename... X>
@@ -216,13 +233,14 @@ void SerializeHDKeypaths(Stream& s, const std::map<CPubKey, KeyOriginInfo>& hd_k
 }
 
 /** Produce a script signature using a generic signature creator. */
-bool ProduceSignature(const SigningProvider& provider, const BaseSignatureCreator& creator, const CScript& scriptPubKey, SignatureData& sigdata);
+bool ProduceSignature(const SigningProvider& provider, const BaseSignatureCreator& creator, const CScript& fromPubKey, SignatureData& sigdata, vaulttxntype txType = TX_INVALID);
 
 /** Produce a script signature for a transaction. */
 bool SignSignature(const SigningProvider &provider, const CScript& fromPubKey, CMutableTransaction& txTo, unsigned int nIn, const CAmount& amount, int nHashType);
 bool SignSignature(const SigningProvider &provider, const CTransaction& txFrom, CMutableTransaction& txTo, unsigned int nIn, int nHashType);
 
 /** Extract signature data from a transaction input, and insert it. */
+txnouttype ExtractDataFromIncompleteScript(SignatureData& data, Stacks& stack, const BaseSignatureChecker& checker, const CTxOut& txout);
 SignatureData DataFromTransaction(const CMutableTransaction& tx, unsigned int nIn, const CTxOut& txout);
 void UpdateInput(CTxIn& input, const SignatureData& data);
 
@@ -231,5 +249,6 @@ void UpdateInput(CTxIn& input, const SignatureData& data);
  * provider is used to look up public keys and redeemscripts by hash.
  * Solvability is unrelated to whether we consider this output to be ours. */
 bool IsSolvable(const SigningProvider& provider, const CScript& script);
+bool IsSolvable(const SigningProvider& provider, const CScript& script, SignatureData& ret);
 
 #endif // BITCOIN_SCRIPT_SIGN_H

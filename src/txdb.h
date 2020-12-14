@@ -6,6 +6,7 @@
 #ifndef BITCOIN_TXDB_H
 #define BITCOIN_TXDB_H
 
+#include <chainparams.h>
 #include <coins.h>
 #include <dbwrapper.h>
 #include <chain.h>
@@ -45,8 +46,10 @@ class CCoinsViewDB final : public CCoinsView
 {
 protected:
     CDBWrapper db;
+    const CChainParams& params;
+
 public:
-    explicit CCoinsViewDB(size_t nCacheSize, bool fMemory = false, bool fWipe = false);
+    explicit CCoinsViewDB(size_t nCacheSize, const CChainParams& chainparams, bool fMemory = false, bool fWipe = false);
 
     bool GetCoin(const COutPoint &outpoint, Coin &coin) const override;
     bool HaveCoin(const COutPoint &outpoint) const override;

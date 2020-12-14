@@ -10,6 +10,7 @@
 #include <primitives/transaction.h>
 #include <script/standard.h>
 #include <uint256.h>
+#include <keystore.h>
 
 typedef std::vector<unsigned char> valtype;
 
@@ -95,7 +96,8 @@ static bool CreateSig(const BaseSignatureCreator& creator, SignatureData& sigdat
  * Returns false if scriptPubKey could not be completely satisfied.
  */
 static bool SignStep(const SigningProvider& provider, const BaseSignatureCreator& creator, const CScript& scriptPubKey,
-                     std::vector<valtype>& ret, txnouttype& whichTypeRet, SigVersion sigversion, SignatureData& sigdata)
+                     std::vector<valtype>& ret, txnouttype& whichTypeRet, SigVersion sigversion, SignatureData& sigdata,
+                     vaulttxntype txType = TX_INVALID)
 {
     CScript scriptRet;
     uint160 h160;
@@ -137,6 +139,52 @@ static bool SignStep(const SigningProvider& provider, const BaseSignatureCreator
         // Could not find redeemScript, add to missing
         sigdata.missing_redeem_script = h160;
         return false;
+
+    case TX_VAULT_ALERTADDRESS: {
+        size_t required = txType == TX_ALERT ? 1 : 2;
+        ret.push_back(valtype()); // workaround CHECKMULTISIG bug
+        for (size_t i = 0; i < vSolutions.size(); i++) {
+            CPubKey pubkey = CPubKey(vSolutions[i]);
+            if (ret.size() < required + 1 && CreateSig(creator, sigdata, provider, sig, pubkey, scriptPubKey, sigversion)) {
+                ret.push_back(std::move(sig));
+            }
+        }
+        bool ok = ret.size() == required + 1;
+        for (size_t i = 0; i + ret.size() < required + 1; i++) {
+            ret.push_back(valtype());
+        }
+        if (txType == TX_ALERT) {
+            ret.push_back({static_cast<unsigned char>(0x01)}); // TRUE
+        } else { // recovery
+            ret.push_back(valtype()); // FALSE
+        }
+        return ok;
+    }
+
+    case TX_VAULT_INSTANTADDRESS: {
+        size_t required = txType == TX_ALERT ? 1 : txType == TX_INSTANT ? 2 : 3;
+        ret.push_back(valtype()); // workaround CHECKMULTISIG bug
+        for (size_t i = 0; i < vSolutions.size(); i++) {
+            CPubKey pubkey = CPubKey(vSolutions[i]);
+            if (ret.size() < required + 1 && CreateSig(creator, sigdata, provider, sig, pubkey, scriptPubKey, sigversion)) {
+                ret.push_back(std::move(sig));
+            }
+        }
+        bool ok = ret.size() == required + 1;
+        for (size_t i = 0; i + ret.size() < required + 1; i++) {
+            ret.push_back(valtype());
+        }
+        if (txType == TX_ALERT) {
+            ret.push_back({static_cast<unsigned char>(0x01)}); // TRUE
+        } else if (txType == TX_INSTANT) {
+            ret.push_back({static_cast<unsigned char>(0x01)}); // TRUE
+            ret.push_back(valtype()); // FALSE
+        } else { // recovery
+            ret.push_back(valtype()); // FALSE
+            ret.push_back(valtype()); // FALSE
+        }
+        return ok;
+    }
 
     case TX_MULTISIG: {
         size_t required = vSolutions.front()[0];
@@ -187,13 +235,13 @@ static CScript PushAll(const std::vector<valtype>& values)
     return result;
 }
 
-bool ProduceSignature(const SigningProvider& provider, const BaseSignatureCreator& creator, const CScript& fromPubKey, SignatureData& sigdata)
+bool ProduceSignature(const SigningProvider& provider, const BaseSignatureCreator& creator, const CScript& fromPubKey, SignatureData& sigdata, vaulttxntype txType)
 {
     if (sigdata.complete) return true;
 
     std::vector<valtype> result;
     txnouttype whichType;
-    bool solved = SignStep(provider, creator, fromPubKey, result, whichType, SigVersion::BASE, sigdata);
+    bool solved = SignStep(provider, creator, fromPubKey, result, whichType, SigVersion::BASE, sigdata, txType);
     bool P2SH = false;
     CScript subscript;
     sigdata.scriptWitness.stack.clear();
@@ -205,7 +253,7 @@ bool ProduceSignature(const SigningProvider& provider, const BaseSignatureCreato
         // and then the serialized subscript:
         subscript = CScript(result[0].begin(), result[0].end());
         sigdata.redeem_script = subscript;
-        solved = solved && SignStep(provider, creator, subscript, result, whichType, SigVersion::BASE, sigdata) && whichType != TX_SCRIPTHASH;
+        solved = solved && SignStep(provider, creator, subscript, result, whichType, SigVersion::BASE, sigdata, txType) && whichType != TX_SCRIPTHASH;
         P2SH = true;
     }
 
@@ -214,7 +262,7 @@ bool ProduceSignature(const SigningProvider& provider, const BaseSignatureCreato
         CScript witnessscript;
         witnessscript << OP_DUP << OP_HASH160 << ToByteVector(result[0]) << OP_EQUALVERIFY << OP_CHECKSIG;
         txnouttype subType;
-        solved = solved && SignStep(provider, creator, witnessscript, result, subType, SigVersion::WITNESS_V0, sigdata);
+        solved = solved && SignStep(provider, creator, witnessscript, result, subType, SigVersion::WITNESS_V0, sigdata, txType);
         sigdata.scriptWitness.stack = result;
         sigdata.witness = true;
         result.clear();
@@ -224,7 +272,7 @@ bool ProduceSignature(const SigningProvider& provider, const BaseSignatureCreato
         CScript witnessscript(result[0].begin(), result[0].end());
         sigdata.witness_script = witnessscript;
         txnouttype subType;
-        solved = solved && SignStep(provider, creator, witnessscript, result, subType, SigVersion::WITNESS_V0, sigdata) && subType != TX_SCRIPTHASH && subType != TX_WITNESS_V0_SCRIPTHASH && subType != TX_WITNESS_V0_KEYHASH;
+        solved = solved && SignStep(provider, creator, witnessscript, result, subType, SigVersion::WITNESS_V0, sigdata, txType) && subType != TX_SCRIPTHASH && subType != TX_WITNESS_V0_SCRIPTHASH && subType != TX_WITNESS_V0_KEYHASH;
         result.push_back(std::vector<unsigned char>(witnessscript.begin(), witnessscript.end()));
         sigdata.scriptWitness.stack = result;
         sigdata.witness = true;
@@ -264,38 +312,8 @@ bool SignatureExtractorChecker::CheckSig(const std::vector<unsigned char>& scrip
     return false;
 }
 
-namespace
-{
-struct Stacks
-{
-    std::vector<valtype> script;
-    std::vector<valtype> witness;
-
-    Stacks() = delete;
-    Stacks(const Stacks&) = delete;
-    explicit Stacks(const SignatureData& data) : witness(data.scriptWitness.stack) {
-        EvalScript(script, data.scriptSig, SCRIPT_VERIFY_STRICTENC, BaseSignatureChecker(), SigVersion::BASE);
-    }
-};
-}
-
 // Extracts signatures and scripts from incomplete scriptSigs. Please do not extend this, use PSBT instead
-SignatureData DataFromTransaction(const CMutableTransaction& tx, unsigned int nIn, const CTxOut& txout)
-{
-    SignatureData data;
-    assert(tx.vin.size() > nIn);
-    data.scriptSig = tx.vin[nIn].scriptSig;
-    data.scriptWitness = tx.vin[nIn].scriptWitness;
-    Stacks stack(data);
-
-    // Get signatures
-    MutableTransactionSignatureChecker tx_checker(&tx, nIn, txout.nValue);
-    SignatureExtractorChecker extractor_checker(data, tx_checker);
-    if (VerifyScript(data.scriptSig, txout.scriptPubKey, &data.scriptWitness, STANDARD_SCRIPT_VERIFY_FLAGS, extractor_checker)) {
-        data.complete = true;
-        return data;
-    }
-
+txnouttype ExtractDataFromIncompleteScript(SignatureData& data, Stacks& stack, const BaseSignatureChecker& checker, const CTxOut& txout) {
     // Get scripts
     std::vector<std::vector<unsigned char>> solutions;
     txnouttype script_type = Solver(txout.scriptPubKey, solutions);
@@ -334,13 +352,51 @@ SignatureData DataFromTransaction(const CMutableTransaction& tx, unsigned int nI
             for (unsigned int i = last_success_key; i < num_pubkeys; ++i) {
                 const valtype& pubkey = solutions[i+1];
                 // We either have a signature for this pubkey, or we have found a signature and it is valid
-                if (data.signatures.count(CPubKey(pubkey).GetID()) || extractor_checker.CheckSig(sig, pubkey, next_script, sigversion)) {
+                if (data.signatures.count(CPubKey(pubkey).GetID()) || checker.CheckSig(sig, pubkey, next_script, sigversion)) {
                     last_success_key = i + 1;
                     break;
                 }
             }
         }
     }
+    if ((script_type == TX_VAULT_ALERTADDRESS || script_type == TX_VAULT_INSTANTADDRESS) && !stack.script.empty()) {
+        unsigned int num_pubkeys = solutions.size();
+        unsigned int expected_num_pubkeys = script_type == TX_VAULT_ALERTADDRESS ? 2 : 3;
+        assert(num_pubkeys == expected_num_pubkeys);
+        unsigned int last_success_key = 0;
+        for (const valtype& sig : stack.script) {
+            for (unsigned int i = last_success_key; i < num_pubkeys; ++i) {
+                const valtype& pubkey = solutions[i];
+                // We either have a signature for this pubkey, or we have found a signature and it is valid
+                if (data.signatures.count(CPubKey(pubkey).GetID()) || checker.CheckSig(sig, pubkey, next_script, sigversion)) {
+                    last_success_key = i + 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    return script_type;
+}
+
+// Extracts signatures and scripts from incomplete scriptSigs. Please do not extend this, use PSBT instead
+SignatureData DataFromTransaction(const CMutableTransaction& tx, unsigned int nIn, const CTxOut& txout)
+{
+    SignatureData data;
+    assert(tx.vin.size() > nIn);
+    data.scriptSig = tx.vin[nIn].scriptSig;
+    data.scriptWitness = tx.vin[nIn].scriptWitness;
+    Stacks stack(data);
+
+    // Get signatures
+    MutableTransactionSignatureChecker tx_checker(&tx, nIn, txout.nValue);
+    SignatureExtractorChecker extractor_checker(data, tx_checker);
+    if (VerifyScript(data.scriptSig, txout.scriptPubKey, &data.scriptWitness, STANDARD_SCRIPT_VERIFY_FLAGS, extractor_checker)) {
+        data.complete = true;
+        return data;
+    }
+
+    ExtractDataFromIncompleteScript(data, stack, extractor_checker, txout);
 
     return data;
 }
@@ -442,6 +498,12 @@ const SigningProvider& DUMMY_SIGNING_PROVIDER = SigningProvider();
 
 bool IsSolvable(const SigningProvider& provider, const CScript& script)
 {
+    SignatureData ret;
+    return IsSolvable(provider, script, ret);
+}
+
+bool IsSolvable(const SigningProvider& provider, const CScript& script, SignatureData& ret)
+{
     // This check is to make sure that the script we created can actually be solved for and signed by us
     // if we were to have the private keys. This is just to make sure that the script is valid and that,
     // if found in a transaction, we would still accept and relay that transaction. In particular,
@@ -454,6 +516,7 @@ bool IsSolvable(const SigningProvider& provider, const CScript& script)
         // VerifyScript check is just defensive, and should never fail.
         bool verified = VerifyScript(sigs.scriptSig, script, &sigs.scriptWitness, STANDARD_SCRIPT_VERIFY_FLAGS, DUMMY_CHECKER);
         assert(verified);
+        ret = sigs;
         return true;
     }
     return false;

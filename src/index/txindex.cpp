@@ -12,6 +12,7 @@
 
 constexpr char DB_BEST_BLOCK = 'B';
 constexpr char DB_TXINDEX = 't';
+constexpr char DB_TXALERTINDEX = 'a';
 constexpr char DB_TXINDEX_BLOCK = 'T';
 
 std::unique_ptr<TxIndex> g_txindex;
@@ -59,8 +60,15 @@ public:
     /// transaction hash is not indexed.
     bool ReadTxPos(const uint256& txid, CDiskTxPos& pos) const;
 
+    /// Read the disk location of the transaction alert data with the given hash. Returns false if the
+    /// transaction hash is not indexed.
+    bool ReadTxAlertPos(const uint256& txid, CDiskTxPos& pos) const;
+
     /// Write a batch of transaction positions to the DB.
     bool WriteTxs(const std::vector<std::pair<uint256, CDiskTxPos>>& v_pos);
+
+    /// Write a batch of transaction alerts positions to the DB.
+    bool WriteTxAlerts(const std::vector<std::pair<uint256, CDiskTxPos>>& v_pos);
 
     /// Migrate txindex data from the block tree DB, where it may be for older nodes that have not
     /// been upgraded yet to the new database.
@@ -76,11 +84,25 @@ bool TxIndex::DB::ReadTxPos(const uint256 &txid, CDiskTxPos& pos) const
     return Read(std::make_pair(DB_TXINDEX, txid), pos);
 }
 
+bool TxIndex::DB::ReadTxAlertPos(const uint256 &txid, CDiskTxPos& pos) const
+{
+    return Read(std::make_pair(DB_TXALERTINDEX, txid), pos);
+}
+
 bool TxIndex::DB::WriteTxs(const std::vector<std::pair<uint256, CDiskTxPos>>& v_pos)
 {
     CDBBatch batch(*this);
     for (const auto& tuple : v_pos) {
         batch.Write(std::make_pair(DB_TXINDEX, tuple.first), tuple.second);
+    }
+    return WriteBatch(batch);
+}
+
+bool TxIndex::DB::WriteTxAlerts(const std::vector<std::pair<uint256, CDiskTxPos>>& v_pos)
+{
+    CDBBatch batch(*this);
+    for (const auto& tuple : v_pos) {
+        batch.Write(std::make_pair(DB_TXALERTINDEX, tuple.first), tuple.second);
     }
     return WriteBatch(batch);
 }
@@ -248,23 +270,51 @@ bool TxIndex::WriteBlock(const CBlock& block, const CBlockIndex* pindex)
     // Exclude genesis block transaction because outputs are not spendable.
     if (pindex->nHeight == 0) return true;
 
-    CDiskTxPos pos(pindex->GetBlockPos(), GetSizeOfCompactSize(block.vtx.size()));
+    size_t txSize = block.vtx.size();
+
+    CDiskTxPos pos(pindex->GetBlockPos(), GetSizeOfCompactSize(txSize));
     std::vector<std::pair<uint256, CDiskTxPos>> vPos;
-    vPos.reserve(block.vtx.size());
+    vPos.reserve(txSize);
+
     for (const auto& tx : block.vtx) {
         vPos.emplace_back(tx->GetHash(), pos);
         pos.nTxOffset += ::GetSerializeSize(*tx, CLIENT_VERSION);
     }
-    return m_db->WriteTxs(vPos);
+
+    if (!m_db->WriteTxs(vPos))
+        return false;
+
+    if (block.fAlertsSerialization) {
+        size_t atxSize = block.vatx.size();
+        CDiskTxPos alertsPos(pindex->GetBlockPos(), pos.nTxOffset + GetSizeOfCompactSize(atxSize));
+        std::vector<std::pair<uint256, CDiskTxPos>> vAlertsPos;
+        vAlertsPos.reserve(atxSize);
+
+        for (const auto& atx : block.vatx) {
+            vAlertsPos.emplace_back(atx->GetHash(), alertsPos);
+            alertsPos.nTxOffset += ::GetSerializeSize(*atx, CLIENT_VERSION);
+        }
+
+        if (!m_db->WriteTxAlerts(vAlertsPos))
+            return false;
+    }
+
+    return true;
 }
 
 BaseIndex::DB& TxIndex::GetDB() const { return *m_db; }
 
-bool TxIndex::FindTx(const uint256& tx_hash, uint256& block_hash, CTransactionRef& tx) const
+bool TxIndex::FindTx(const uint256& tx_hash, uint256& block_hash, CBaseTransactionRef& tx, vaulttxnstatus* txStatus) const
 {
     CDiskTxPos postx;
+    if (txStatus != nullptr)
+        *txStatus = TX_CONFIRMED;
     if (!m_db->ReadTxPos(tx_hash, postx)) {
-        return false;
+        if (txStatus != nullptr)
+            *txStatus = TX_PENDING;
+        if (!m_db->ReadTxAlertPos(tx_hash, postx)) {
+            return false;
+        }
     }
 
     CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);

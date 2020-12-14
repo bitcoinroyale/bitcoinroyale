@@ -46,6 +46,23 @@ CPubKey AddrToPubKey(CKeyStore* const keystore, const std::string& addr_in)
     return vchPubKey;
 }
 
+CScript CreateVaultAddressRedeemscript(const std::vector<CPubKey>& pubkeys, bool instant) {
+    // Gather public keys
+    int required = instant ? 3 : 2;
+
+    if ((int)pubkeys.size() != required) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("wrong number of keys supplied (got %u keys, but need exactly %d to redeem)", pubkeys.size(), required));
+    }
+
+    CScript result = GetScriptForVaultAddress(pubkeys, instant);
+
+    if (result.size() > MAX_SCRIPT_ELEMENT_SIZE) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, (strprintf("redeemScript exceeds size limit: %d > %d", result.size(), MAX_SCRIPT_ELEMENT_SIZE)));
+    }
+
+    return result;
+}
+
 // Creates a multisig redeemscript from a given list of public keys and number required.
 CScript CreateMultisigRedeemscript(const int required, const std::vector<CPubKey>& pubkeys)
 {

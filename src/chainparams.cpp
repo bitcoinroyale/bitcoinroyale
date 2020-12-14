@@ -34,7 +34,7 @@ static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesi
     genesis.nVersion = nVersion;
     genesis.vtx.push_back(MakeTransactionRef(std::move(txNew)));
     genesis.hashPrevBlock.SetNull();
-    genesis.hashMerkleRoot = BlockMerkleRoot(genesis);
+    genesis.hashMerkleRoot = BlockMerkleRoot(genesis.vtx);
     return genesis;
 }
 
@@ -69,6 +69,10 @@ public:
         consensus.BIP34Hash = uint256();
         consensus.BIP65Height = 1;
         consensus.BIP66Height = 1;
+        consensus.CSVHeight = 1;
+        consensus.SegwitHeight = 1;
+        consensus.AlertsHeight = 58420; // Not yet enabled
+        consensus.DDMSHeight = 29430;
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
         consensus.nPowTargetSpacing = 10 * 60; // 10 minutes (block time like Bitcoin)
@@ -76,19 +80,11 @@ public:
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1916; // 95% of 2016
         consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
+        consensus.nAlertsInitializationWindow = 144;
+        consensus.nAlertsAncestorValidationHeight = 58567;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = 0;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-
-        // Deployment of BIP68, BIP112, and BIP113.
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-
-        // Deployment of SegWit (BIP141, BIP143, and BIP147)
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].bit = 1;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
 
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0x01");
@@ -99,15 +95,26 @@ public:
         //POW DDA LWMA Parameters
         consensus.nLwmaAveragingWindow = 30; // see https://github.com/ianduoteli/pow-difficulty-simulations
 
+        // AUX POW Parameters
+        consensus.nAuxpowChainId = 0x0666;
+        consensus.nAuxpowStartHeight = 58420;
+        consensus.fStrictChainId = true;
+
         /**
          * The message start string is designed to be unlikely to occur in normal data.
          * The characters are rarely used upper ASCII, not valid as UTF-8, and produce
          * a large 32-bit integer with any alignment.
          */
-        pchMessageStart[0] = 0xf3;
-        pchMessageStart[1] = 0x92;
-        pchMessageStart[2] = 0xac;
-        pchMessageStart[3] = 0x89;
+        pchMessageStartNetwork[0] = 0x55;
+        pchMessageStartNetwork[1] = 0xbd;
+        pchMessageStartNetwork[2] = 0xd8;
+        pchMessageStartNetwork[3] = 0xad;
+        pchMessageStartDisk[0] = 0xf3;
+        pchMessageStartDisk[1] = 0x92;
+        pchMessageStartDisk[2] = 0xac;
+        pchMessageStartDisk[3] = 0x89;
+
+
         nDefaultPort = 8333;
         nPruneAfterHeight = 100000;
         m_assumed_blockchain_size = 240;
@@ -126,8 +133,7 @@ public:
         // release ASAP to avoid it where possible.
         vFixedSeeds.clear();
         vSeeds.clear();
-        vSeeds.emplace_back("seed.bitcoinroyale.org");
-        vSeeds.emplace_back("seed-two.bitcoinroyale.org");
+        vSeeds.emplace_back("seed.bitcoinvault.global");
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,78); // "Y"
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,60); // "R" 
@@ -143,6 +149,8 @@ public:
 
         checkpointData = {
             {
+            	// Fork from BitcoinRoyale
+            	{9570, uint256S("0x000000000000000a20b43b05e1fa36f504d5c284e7cb320e50b440715c89d8a2")},
             }
         };
 
@@ -152,9 +160,7 @@ public:
             /* nTxCount */ 0,
             /* dTxRate  */ 0
         };
-
-        /* disable fallback fee on mainnet */
-        m_fallback_fee_enabled = false;
+        m_fallback_fee_enabled = true;
     }
 };
 
@@ -171,6 +177,10 @@ public:
         consensus.BIP34Hash = uint256();
         consensus.BIP65Height = 1;
         consensus.BIP66Height = 1;
+        consensus.CSVHeight = 1;
+        consensus.SegwitHeight = 1;
+        consensus.AlertsHeight = 92960; // Not yet enabled
+        consensus.DDMSHeight = INT_MAX; // Do not activate DDMS on testnet
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
         consensus.nPowTargetSpacing = 10 * 60; // 10 minutes (block time like Bitcoin)
@@ -178,19 +188,11 @@ public:
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1512; // 75% for testchains
         consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
+        consensus.nAlertsInitializationWindow = 144;
+        consensus.nAlertsAncestorValidationHeight = consensus.AlertsHeight;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = 0;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-
-        // Deployment of BIP68, BIP112, and BIP113.
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-
-        // Deployment of SegWit (BIP141, BIP143, and BIP147)
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].bit = 1;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
 
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0x01");
@@ -201,10 +203,19 @@ public:
         //POW DDA LWMA Parameters
         consensus.nLwmaAveragingWindow = 30; // see https://github.com/ianduoteli/pow-difficulty-simulations
 
-        pchMessageStart[0] = 0xb3;
-        pchMessageStart[1] = 0xdb;
-        pchMessageStart[2] = 0x95;
-        pchMessageStart[3] = 0x93;
+        // AUX POW Parameters
+        consensus.nAuxpowChainId = 0x0666;
+        consensus.nAuxpowStartHeight = 119600;
+        consensus.fStrictChainId = false;
+
+        pchMessageStartNetwork[0] = 0xd3;
+        pchMessageStartNetwork[1] = 0xe9;
+        pchMessageStartNetwork[2] = 0x68;
+        pchMessageStartNetwork[3] = 0xdd;
+        pchMessageStartDisk[0] = 0xb3;
+        pchMessageStartDisk[1] = 0xdb;
+        pchMessageStartDisk[2] = 0x95;
+        pchMessageStartDisk[3] = 0x93;
         nDefaultPort = 18333;
         nPruneAfterHeight = 1000;
         m_assumed_blockchain_size = 1;
@@ -218,9 +229,8 @@ public:
 
         vFixedSeeds.clear();
         vSeeds.clear();
+        vSeeds.emplace_back("157.230.102.82");
         // nodes with support for servicebits filtering should be at the top
-        vSeeds.emplace_back("testnet-seed.bitcoinroyale.org");
-        vSeeds.emplace_back("testnet-seed-two.bitcoinroyale.org");
         
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,111); // addresses like Bitcoin testnet
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,196); // addresses like Bitcoin testnet
@@ -264,6 +274,10 @@ public:
         consensus.BIP34Hash = uint256();
         consensus.BIP65Height = 1351; // BIP65 activated on regtest (Used in functional tests)
         consensus.BIP66Height = 1251; // BIP66 activated on regtest (Used in functional tests)
+        consensus.CSVHeight = 432; // CSV activated on regtest (Used in rpc activation tests)
+        consensus.SegwitHeight = 1; // SEGWIT is always activated on regtest unless overriden
+        consensus.AlertsHeight = 1;
+        consensus.DDMSHeight = INT_MAX; // Do not activate DDMS on regtest
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
         consensus.nPowTargetSpacing = 10 * 60;
@@ -271,15 +285,11 @@ public:
         consensus.fPowNoRetargeting = true;
         consensus.nRuleChangeActivationThreshold = 108; // 75% for testchains
         consensus.nMinerConfirmationWindow = 144; // Faster than normal for regtest (144 instead of 2016)
+        consensus.nAlertsInitializationWindow = 144;
+        consensus.nAlertsAncestorValidationHeight = consensus.AlertsHeight;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = 0;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].bit = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_CSV].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].bit = 1;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
-        consensus.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
 
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0x00");
@@ -290,10 +300,19 @@ public:
         //POW DDA LWMA Parameters
         consensus.nLwmaAveragingWindow = 30; // see https://github.com/ianduoteli/pow-difficulty-simulations
 
-        pchMessageStart[0] = 0xfa;
-        pchMessageStart[1] = 0xbf;
-        pchMessageStart[2] = 0xb5;
-        pchMessageStart[3] = 0xda;
+        // AUX POW Parameters
+        consensus.nAuxpowChainId = 0x0666;
+        consensus.nAuxpowStartHeight = 1;
+        consensus.fStrictChainId = true;
+
+        pchMessageStartNetwork[0] = 0xfa;
+        pchMessageStartNetwork[1] = 0xbf;
+        pchMessageStartNetwork[2] = 0xb5;
+        pchMessageStartNetwork[3] = 0xda;
+        pchMessageStartDisk[0] = 0xfa;
+        pchMessageStartDisk[1] = 0xbf;
+        pchMessageStartDisk[2] = 0xb5;
+        pchMessageStartDisk[3] = 0xda;
         nDefaultPort = 18444;
         nPruneAfterHeight = 1000;
         m_assumed_blockchain_size = 0;

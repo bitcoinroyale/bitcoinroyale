@@ -46,7 +46,7 @@ CCoinsMap::iterator CCoinsViewCache::FetchCoin(const COutPoint &outpoint) const 
     if (!base->GetCoin(outpoint, tmp))
         return cacheCoins.end();
     CCoinsMap::iterator ret = cacheCoins.emplace(std::piecewise_construct, std::forward_as_tuple(outpoint), std::forward_as_tuple(std::move(tmp))).first;
-    if (ret->second.coin.IsSpent()) {
+    if (ret->second.coin.IsConfirmed()) {
         // The parent only has an empty entry for this outpoint; we can consider our
         // version as fresh.
         ret->second.flags = CCoinsCacheEntry::FRESH;
@@ -59,13 +59,13 @@ bool CCoinsViewCache::GetCoin(const COutPoint &outpoint, Coin &coin) const {
     CCoinsMap::const_iterator it = FetchCoin(outpoint);
     if (it != cacheCoins.end()) {
         coin = it->second.coin;
-        return !coin.IsSpent();
+        return !coin.IsConfirmed();
     }
     return false;
 }
 
 void CCoinsViewCache::AddCoin(const COutPoint &outpoint, Coin&& coin, bool possible_overwrite) {
-    assert(!coin.IsSpent());
+    assert(!coin.IsConfirmed());
     if (coin.out.scriptPubKey.IsUnspendable()) return;
     CCoinsMap::iterator it;
     bool inserted;
@@ -75,7 +75,7 @@ void CCoinsViewCache::AddCoin(const COutPoint &outpoint, Coin&& coin, bool possi
         cachedCoinsUsage -= it->second.coin.DynamicMemoryUsage();
     }
     if (!possible_overwrite) {
-        if (!it->second.coin.IsSpent()) {
+        if (!it->second.coin.IsConfirmed()) {
             throw std::logic_error("Adding new coin that replaces non-pruned entry");
         }
         fresh = !(it->second.flags & CCoinsCacheEntry::DIRTY);
@@ -85,23 +85,30 @@ void CCoinsViewCache::AddCoin(const COutPoint &outpoint, Coin&& coin, bool possi
     cachedCoinsUsage += it->second.coin.DynamicMemoryUsage();
 }
 
-void AddCoins(CCoinsViewCache& cache, const CTransaction &tx, int nHeight, bool check) {
+void AddCoins(CCoinsViewCache& cache, const CBaseTransaction &tx, int nHeight, bool check) {
     bool fCoinbase = tx.IsCoinBase();
     const uint256& txid = tx.GetHash();
     for (size_t i = 0; i < tx.vout.size(); ++i) {
+        int nSpentHeight = 0;
+        int nAlertsHeight = 0;
         bool overwrite = check ? cache.HaveCoin(COutPoint(txid, i)) : fCoinbase;
+        if (overwrite) {
+            Coin coin = cache.AccessCoin(COutPoint(txid, i));
+            nSpentHeight = coin.nSpentHeight;
+            nAlertsHeight = coin.fAlertsHeight;
+        }
         // Always set the possible_overwrite flag to AddCoin for coinbase txn, in order to correctly
         // deal with the pre-BIP30 occurrences of duplicate coinbase transactions.
-        cache.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, fCoinbase), overwrite);
+        cache.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, fCoinbase, nSpentHeight, nAlertsHeight), overwrite);
     }
 }
 
-bool CCoinsViewCache::SpendCoin(const COutPoint &outpoint, Coin* moveout) {
+bool CCoinsViewCache::ConfirmCoin(const COutPoint &outpoint, Coin* moveto) {
     CCoinsMap::iterator it = FetchCoin(outpoint);
     if (it == cacheCoins.end()) return false;
     cachedCoinsUsage -= it->second.coin.DynamicMemoryUsage();
-    if (moveout) {
-        *moveout = std::move(it->second.coin);
+    if (moveto) {
+        *moveto = std::move(it->second.coin);
     }
     if (it->second.flags & CCoinsCacheEntry::FRESH) {
         cacheCoins.erase(it);
@@ -109,6 +116,17 @@ bool CCoinsViewCache::SpendCoin(const COutPoint &outpoint, Coin* moveout) {
         it->second.flags |= CCoinsCacheEntry::DIRTY;
         it->second.coin.Clear();
     }
+    return true;
+}
+
+bool CCoinsViewCache::SpendCoin(const COutPoint &outpoint, int nHeight, Coin* moveto) {
+    CCoinsMap::iterator it = FetchCoin(outpoint);
+    if (it == cacheCoins.end()) return false;
+    if (moveto) {
+        *moveto = std::move(Coin(it->second.coin));
+    }
+    it->second.coin.Spend(nHeight);
+    AddCoin(it->first, std::move(it->second.coin), true);
     return true;
 }
 
@@ -125,12 +143,12 @@ const Coin& CCoinsViewCache::AccessCoin(const COutPoint &outpoint) const {
 
 bool CCoinsViewCache::HaveCoin(const COutPoint &outpoint) const {
     CCoinsMap::const_iterator it = FetchCoin(outpoint);
-    return (it != cacheCoins.end() && !it->second.coin.IsSpent());
+    return (it != cacheCoins.end() && !it->second.coin.IsConfirmed());
 }
 
 bool CCoinsViewCache::HaveCoinInCache(const COutPoint &outpoint) const {
     CCoinsMap::const_iterator it = cacheCoins.find(outpoint);
-    return (it != cacheCoins.end() && !it->second.coin.IsSpent());
+    return (it != cacheCoins.end() && !it->second.coin.IsConfirmed());
 }
 
 uint256 CCoinsViewCache::GetBestBlock() const {
@@ -153,7 +171,7 @@ bool CCoinsViewCache::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlockIn
         if (itUs == cacheCoins.end()) {
             // The parent cache does not have an entry, while the child does
             // We can ignore it if it's both FRESH and pruned in the child
-            if (!(it->second.flags & CCoinsCacheEntry::FRESH && it->second.coin.IsSpent())) {
+            if (!(it->second.flags & CCoinsCacheEntry::FRESH && it->second.coin.IsConfirmed())) {
                 // Otherwise we will need to create it in the parent
                 // and move the data up and mark it as dirty
                 CCoinsCacheEntry& entry = cacheCoins[it->first];
@@ -172,12 +190,12 @@ bool CCoinsViewCache::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlockIn
             // parent cache entry has unspent outputs. If this ever happens,
             // it means the FRESH flag was misapplied and there is a logic
             // error in the calling code.
-            if ((it->second.flags & CCoinsCacheEntry::FRESH) && !itUs->second.coin.IsSpent()) {
+            if ((it->second.flags & CCoinsCacheEntry::FRESH) && !itUs->second.coin.IsConfirmed()) {
                 throw std::logic_error("FRESH flag misapplied to cache entry for base transaction with spendable outputs");
             }
 
             // Found the entry in the parent cache
-            if ((itUs->second.flags & CCoinsCacheEntry::FRESH) && it->second.coin.IsSpent()) {
+            if ((itUs->second.flags & CCoinsCacheEntry::FRESH) && it->second.coin.IsConfirmed()) {
                 // The grandparent does not have an entry, and the child is
                 // modified and being pruned. This means we can just delete
                 // it from the parent.
@@ -221,7 +239,7 @@ unsigned int CCoinsViewCache::GetCacheSize() const {
     return cacheCoins.size();
 }
 
-CAmount CCoinsViewCache::GetValueIn(const CTransaction& tx) const
+CAmount CCoinsViewCache::GetValueIn(const CBaseTransaction& tx) const
 {
     if (tx.IsCoinBase())
         return 0;
@@ -233,7 +251,7 @@ CAmount CCoinsViewCache::GetValueIn(const CTransaction& tx) const
     return nResult;
 }
 
-bool CCoinsViewCache::HaveInputs(const CTransaction& tx) const
+bool CCoinsViewCache::HaveInputs(const CBaseTransaction& tx) const
 {
     if (!tx.IsCoinBase()) {
         for (unsigned int i = 0; i < tx.vin.size(); i++) {

@@ -881,7 +881,7 @@
 <context>
     <name>bitcoin-core</name>
     <message>
-        <source>Bitcoin Royale</source>
+        <source>Bitcoin Vault</source>
         <translation>Биткойн ядро</translation>
     </message>
     <message>

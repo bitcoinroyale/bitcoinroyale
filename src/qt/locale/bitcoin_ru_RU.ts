@@ -367,7 +367,7 @@
     </message>
     <message>
         <source>Bitcoin</source>
-        <translation>Bitcoin Royale</translation>
+        <translation>Bitcoin Vault</translation>
     </message>
     <message>
         <source>&amp;Send</source>
@@ -902,7 +902,7 @@
     </message>
     <message>
         <source>Bitcoin</source>
-        <translation>Bitcoin Royale</translation>
+        <translation>Bitcoin Vault</translation>
     </message>
     <message>
         <source>At least %1 GB of data will be stored in this directory, and it will grow over time.</source>
@@ -3239,8 +3239,8 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
         <translation>Невозможно запустить HTTP-сервер. Для получения более детальной информации необходимо обратиться к журналу отладки.</translation>
     </message>
     <message>
-        <source>Bitcoin Royale</source>
-        <translation>Bitcoin Royale</translation>
+        <source>Bitcoin Vault</source>
+        <translation>Bitcoin Vault</translation>
     </message>
     <message>
         <source>The %s developers</source>

@@ -218,6 +218,14 @@ static GCSFilter::ElementSet BasicFilterElements(const CBlock& block,
         }
     }
 
+    for (const CTxUndo& atx_undo : block_undo.vatxundo) {
+        for (const Coin& prevout : atx_undo.vprevout) {
+            const CScript& script = prevout.out.scriptPubKey;
+            if (script.empty()) continue;
+            elements.emplace(script.begin(), script.end());
+        }
+    }
+
     return elements;
 }
 

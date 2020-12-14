@@ -193,6 +193,12 @@ BASE_SCRIPTS = [
     'feature_shutdown.py',
     # Don't append tests at the end to avoid merge conflicts
     # Put them in a random line within the section that fits their approximate run-time
+    
+    # auxpow tests
+    'auxpow_mining.py',
+    'auxpow_mining.py --segwit',
+    'auxpow_invalidpow.py',
+    'auxpow_zerohash.py',
 ]
 
 EXTENDED_SCRIPTS = [
@@ -202,8 +208,15 @@ EXTENDED_SCRIPTS = [
     'feature_dbcrash.py',
 ]
 
+# Tests concerning new Bitcoin Vault features
+VAULT_SCRIPTS = [
+    'feature_alerts.py',
+    'feature_alerts_instant.py',
+    'feature_alerts_reorg.py'
+]
+
 # Place EXTENDED_SCRIPTS first since it has the 3 longest running tests
-ALL_SCRIPTS = EXTENDED_SCRIPTS + BASE_SCRIPTS
+ALL_SCRIPTS = EXTENDED_SCRIPTS + BASE_SCRIPTS + VAULT_SCRIPTS
 
 NON_SCRIPTS = [
     # These are python files that live in the functional tests directory, but are not test scripts.
@@ -225,6 +238,7 @@ def main():
     parser.add_argument('--ci', action='store_true', help='Run checks and code that are usually only enabled in a continuous integration environment')
     parser.add_argument('--exclude', '-x', help='specify a comma-separated-list of scripts to exclude.')
     parser.add_argument('--extended', action='store_true', help='run the extended test suite in addition to the basic tests')
+    parser.add_argument('--vault', action='store_true', help='run the vault test suite only')
     parser.add_argument('--help', '-h', '-?', action='store_true', help='print help text and exit')
     parser.add_argument('--jobs', '-j', type=int, default=4, help='how many test scripts to run in parallel. Default=4.')
     parser.add_argument('--keepcache', '-k', action='store_true', help='the default behavior is to flush the cache directory on startup. --keepcache retains the cache from the previous testrun.')
@@ -255,9 +269,9 @@ def main():
 
     logging.debug("Temporary test directory at %s" % tmpdir)
 
-    enable_broyaled = config["components"].getboolean("ENABLE_BROYALED")
+    enable_bvaultd = config["components"].getboolean("ENABLE_BVAULTD")
 
-    if not enable_broyaled:
+    if not enable_bvaultd:
         print("No functional tests to run.")
         print("Rerun ./configure with --with-daemon and then make")
         sys.exit(0)
@@ -276,6 +290,9 @@ def main():
     elif args.extended:
         # Include extended tests
         test_list += ALL_SCRIPTS
+    elif args.vault:
+        # Run vault tests only
+        test_list += VAULT_SCRIPTS
     else:
         # Run base tests only
         test_list += BASE_SCRIPTS
@@ -324,10 +341,10 @@ def main():
 def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=False, args=None, combined_logs_len=0, failfast=False, runs_ci):
     args = args or []
 
-    # Warn if broyaled is already running (unix only)
+    # Warn if bvaultd is already running (unix only)
     try:
-        if subprocess.check_output(["pidof", "broyaled"]) is not None:
-            print("%sWARNING!%s There is already a broyaled process running on this system. Tests may fail unexpectedly due to resource contention!" % (BOLD[1], BOLD[0]))
+        if subprocess.check_output(["pidof", "bvaultd"]) is not None:
+            print("%sWARNING!%s There is already a bvaultd process running on this system. Tests may fail unexpectedly due to resource contention!" % (BOLD[1], BOLD[0]))
     except (OSError, subprocess.SubprocessError):
         pass
 
@@ -553,7 +570,7 @@ class TestResult():
 def check_script_prefixes():
     """Check that test scripts start with one of the allowed name prefixes."""
 
-    good_prefixes_re = re.compile("(example|feature|interface|mempool|mining|p2p|rpc|wallet|tool)_")
+    good_prefixes_re = re.compile("(example|feature|interface|mempool|mining|p2p|rpc|wallet|tool|auxpow)_")
     bad_script_names = [script for script in ALL_SCRIPTS if good_prefixes_re.match(script) is None]
 
     if bad_script_names:
@@ -584,7 +601,7 @@ class RPCCoverage():
     Coverage calculation works by having each test script subprocess write
     coverage files into a particular directory. These files contain the RPC
     commands invoked during testing, as well as a complete listing of RPC
-    commands per `broyale-cli help` (`rpc_interface.txt`).
+    commands per `bvault-cli help` (`rpc_interface.txt`).
 
     After all tests complete, the commands run are combined and diff'd against
     the complete list to calculate uncovered RPC commands.

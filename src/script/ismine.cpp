@@ -55,6 +55,15 @@ bool HaveKeys(const std::vector<valtype>& pubkeys, const CKeyStore& keystore)
     return true;
 }
 
+bool HaveAtLeastOneKey(const std::vector<valtype>& pubkeys, const CKeyStore& keystore)
+{
+    for (const valtype& pubkey : pubkeys) {
+        CKeyID keyID = CPubKey(pubkey).GetID();
+        if (keystore.HaveKey(keyID)) return true;
+    }
+    return false;
+}
+
 IsMineResult IsMineInner(const CKeyStore& keystore, const CScript& scriptPubKey, IsMineSigVersion sigversion)
 {
     IsMineResult ret = IsMineResult::NO;
@@ -158,6 +167,28 @@ IsMineResult IsMineInner(const CKeyStore& keystore, const CScript& scriptPubKey,
             }
         }
         if (HaveKeys(keys, keystore)) {
+            ret = std::max(ret, IsMineResult::SPENDABLE);
+        }
+        break;
+    }
+
+    case TX_VAULT_ALERTADDRESS:
+    case TX_VAULT_INSTANTADDRESS:
+    {
+        // Never treat bare multisig outputs as ours (they can still be made watchonly-though)
+        if (sigversion == IsMineSigVersion::TOP) {
+            break;
+        }
+
+        std::vector<valtype> keys(vSolutions.begin(), vSolutions.end());
+        if (!PermitsUncompressed(sigversion)) {
+            for (size_t i = 0; i < keys.size(); i++) {
+                if (keys[i].size() != 33) {
+                    return IsMineResult::INVALID;
+                }
+            }
+        }
+        if (HaveAtLeastOneKey(keys, keystore)) {
             ret = std::max(ret, IsMineResult::SPENDABLE);
         }
         break;

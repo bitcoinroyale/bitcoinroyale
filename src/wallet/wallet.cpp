@@ -1042,8 +1042,12 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransactionRef& ptx, const uint256
                 std::pair<TxSpends::const_iterator, TxSpends::const_iterator> range = mapTxSpends.equal_range(txin.prevout);
                 while (range.first != range.second) {
                     if (range.first->second != tx.GetHash()) {
-                        WalletLogPrintf("Transaction %s (in block %s) conflicts with wallet transaction %s (both spend %s:%i)\n", tx.GetHash().ToString(), block_hash.ToString(), range.first->second.ToString(), range.first->first.hash.ToString(), range.first->first.n);
-                        MarkConflicted(block_hash, range.first->second);
+                        vaulttxntype txType = GetVaultTxTypeNonContextual(tx);
+                        bool isRecovered = txType == TX_RECOVERY;
+                        if (!isRecovered) {
+                            WalletLogPrintf("Transaction %s (in block %s) conflicts with wallet transaction %s (both spend %s:%i)\n", tx.GetHash().ToString(), block_hash.ToString(), range.first->second.ToString(), range.first->first.hash.ToString(), range.first->first.n);
+                        }
+                        MarkConflicted(block_hash, range.first->second, isRecovered);
                     }
                     range.first++;
                 }
@@ -1162,7 +1166,7 @@ bool CWallet::AbandonTransaction(interfaces::Chain::Lock& locked_chain, const ui
     return true;
 }
 
-void CWallet::MarkConflicted(const uint256& hashBlock, const uint256& hashTx)
+void CWallet::MarkConflicted(const uint256& hashBlock, const uint256& hashTx, bool isRecovered)
 {
     auto locked_chain = chain().lock();
     LOCK(cs_wallet);
@@ -1190,25 +1194,30 @@ void CWallet::MarkConflicted(const uint256& hashBlock, const uint256& hashTx)
         auto it = mapWallet.find(now);
         assert(it != mapWallet.end());
         CWalletTx& wtx = it->second;
+        uint256 txHashBlock = it->second.hashBlock;
         int currentconfirm = wtx.GetDepthInMainChain(*locked_chain);
         if (conflictconfirms < currentconfirm) {
             // Block is 'more conflicted' than current confirm; update.
             // Mark transaction as conflicted with this block.
             wtx.nIndex = -1;
-            wtx.hashBlock = hashBlock;
-            wtx.MarkDirty();
-            batch.WriteTx(wtx);
-            // Iterate over all its outputs, and mark transactions in the wallet that spend them conflicted too
-            TxSpends::const_iterator iter = mapTxSpends.lower_bound(COutPoint(now, 0));
-            while (iter != mapTxSpends.end() && iter->first.hash == now) {
-                 if (!done.count(iter->second)) {
-                     todo.insert(iter->second);
-                 }
-                 iter++;
+            if (isRecovered) {
+                wtx.hashBlock = txHashBlock;
+            } else {
+                wtx.hashBlock = hashBlock;
+                wtx.MarkDirty();
+                batch.WriteTx(wtx);
+                // Iterate over all its outputs, and mark transactions in the wallet that spend them conflicted too
+                TxSpends::const_iterator iter = mapTxSpends.lower_bound(COutPoint(now, 0));
+                while (iter != mapTxSpends.end() && iter->first.hash == now) {
+                     if (!done.count(iter->second)) {
+                         todo.insert(iter->second);
+                     }
+                     iter++;
+                }
+                // If a transaction changes 'conflicted' state, that changes the balance
+                // available of the outputs it spends. So force those to be recomputed
+                MarkInputsDirty(wtx.tx);
             }
-            // If a transaction changes 'conflicted' state, that changes the balance
-            // available of the outputs it spends. So force those to be recomputed
-            MarkInputsDirty(wtx.tx);
         }
     }
 }
@@ -1262,6 +1271,12 @@ void CWallet::BlockConnected(const std::shared_ptr<const CBlock>& pblock, const 
         TransactionRemovedFromMempool(pblock->vtx[i]);
     }
 
+    for (size_t i = 0; i < pblock->vatx.size(); i++) {
+        CTransactionRef atx = MakeTransactionRef(CTransaction(CMutableTransaction(*pblock->vatx[i])));
+        SyncTransaction(atx, pindex->GetBlockHash(), i, true);
+        TransactionRemovedFromMempool(atx);
+    }
+
     m_last_block_processed = pindex->GetBlockHash();
 }
 
@@ -1271,6 +1286,11 @@ void CWallet::BlockDisconnected(const std::shared_ptr<const CBlock>& pblock) {
 
     for (const CTransactionRef& ptx : pblock->vtx) {
         SyncTransaction(ptx, {} /* block hash */, 0 /* position in block */);
+    }
+
+    for (const CAlertTransactionRef& ptx : pblock->vatx) {
+        CTransactionRef patx = MakeTransactionRef(CTransaction(CMutableTransaction(*ptx)));
+        SyncTransaction(patx, {} /* block hash */, 0 /* position in block */);
     }
 }
 
@@ -1814,6 +1834,10 @@ CWallet::ScanResult CWallet::ScanForWalletTransactions(const uint256& start_bloc
                 for (size_t posInBlock = 0; posInBlock < block.vtx.size(); ++posInBlock) {
                     SyncTransaction(block.vtx[posInBlock], block_hash, posInBlock, fUpdate);
                 }
+                for (size_t posInBlock = 0; posInBlock < block.vatx.size(); ++posInBlock) {
+                    CTransactionRef atx = MakeTransactionRef(CTransaction(CMutableTransaction(*block.vatx[posInBlock])));
+                    SyncTransaction(atx, block_hash, posInBlock, true);
+                }
                 // scan succeeded, record block as most recent successfully scanned
                 result.last_scanned_block = block_hash;
                 result.last_scanned_height = *block_height;
@@ -1999,7 +2023,7 @@ CAmount CWalletTx::GetImmatureCredit(interfaces::Chain::Lock& locked_chain, bool
     return 0;
 }
 
-CAmount CWalletTx::GetAvailableCredit(interfaces::Chain::Lock& locked_chain, bool fUseCache, const isminefilter& filter) const
+CAmount CWalletTx::GetAvailableCredit(interfaces::Chain::Lock& locked_chain, bool fUseCache, const isminefilter& filter, vaulttxntype creditType) const
 {
     if (pwallet == nullptr)
         return 0;
@@ -2019,24 +2043,57 @@ CAmount CWalletTx::GetAvailableCredit(interfaces::Chain::Lock& locked_chain, boo
         cache_used = &fAvailableWatchCreditCached;
     }
 
-    if (fUseCache && cache_used && *cache_used) {
+    if (creditType == TX_INVALID && fUseCache && cache_used && *cache_used) {
         return *cache;
     }
 
     CAmount nCredit = 0;
     uint256 hashTx = GetHash();
+
+    vaulttxntype txType = GetVaultTxTypeNonContextual(*tx);
+    if (txType == TX_ALERT) {
+        vaulttxnstatus txStatus = GetTransactionStatus(tx->GetHash(), Params().GetConsensus(), txType);
+        if (txStatus != TX_CONFIRMED) {
+            return 0;
+        }
+    }
+
     for (unsigned int i = 0; i < tx->vout.size(); i++)
     {
         if (!pwallet->IsSpent(locked_chain, hashTx, i))
         {
             const CTxOut &txout = tx->vout[i];
+
+            if (creditType != TX_INVALID) { // TX_INVALID means unset
+                SignatureData data;
+                IsSolvable(*this->pwallet, txout.scriptPubKey, data);
+                Stacks stack(data);
+                txnouttype scriptType = ExtractDataFromIncompleteScript(data, stack, BaseSignatureChecker(), txout);
+
+                if (creditType == TX_NONVAULT) {
+                    if (scriptType == TX_VAULT_ALERTADDRESS || scriptType == TX_VAULT_INSTANTADDRESS) {
+                        continue;
+                    }
+                } else if (creditType == TX_ALERT) {
+                    if (scriptType != TX_VAULT_ALERTADDRESS && scriptType != TX_VAULT_INSTANTADDRESS) {
+                        continue;
+                    }
+                } else if (creditType == TX_INSTANT) {
+                    if (scriptType != TX_VAULT_INSTANTADDRESS) {
+                        continue;
+                    }
+                } else {
+                    assert(false);
+                }
+            }
+
             nCredit += pwallet->GetCredit(txout, filter);
             if (!MoneyRange(nCredit))
                 throw std::runtime_error(std::string(__func__) + " : value out of range");
         }
     }
 
-    if (cache) {
+    if (creditType == TX_INVALID && cache) {
         *cache = nCredit;
         assert(cache_used);
         *cache_used = true;
@@ -2173,7 +2230,7 @@ void CWallet::ResendWalletTransactions(int64_t nBestBlockTime, CConnman* connman
  */
 
 
-CAmount CWallet::GetBalance(const isminefilter& filter, const int min_depth) const
+CAmount CWallet::GetBalance(const isminefilter& filter, const int min_depth, vaulttxntype creditType) const
 {
     CAmount nTotal = 0;
     {
@@ -2183,7 +2240,7 @@ CAmount CWallet::GetBalance(const isminefilter& filter, const int min_depth) con
         {
             const CWalletTx* pcoin = &entry.second;
             if (pcoin->IsTrusted(*locked_chain) && pcoin->GetDepthInMainChain(*locked_chain) >= min_depth) {
-                nTotal += pcoin->GetAvailableCredit(*locked_chain, true, filter);
+                nTotal += pcoin->GetAvailableCredit(*locked_chain, true, filter, creditType);
             }
         }
     }
@@ -2378,6 +2435,14 @@ void CWallet::AvailableCoins(interfaces::Chain::Lock& locked_chain, std::vector<
         if (nDepth < nMinDepth || nDepth > nMaxDepth)
             continue;
 
+        vaulttxntype txType = GetVaultTxTypeNonContextual(*pcoin->tx);
+        if (txType == TX_ALERT) {
+            vaulttxnstatus txStatus = GetTransactionStatus(pcoin->tx->GetHash(), Params().GetConsensus(), txType);
+            if (txStatus != TX_CONFIRMED) {
+                continue;
+            }
+        }
+
         for (unsigned int i = 0; i < pcoin->tx->vout.size(); i++) {
             if (pcoin->tx->vout[i].nValue < nMinimumAmount || pcoin->tx->vout[i].nValue > nMaximumAmount)
                 continue;
@@ -2397,8 +2462,29 @@ void CWallet::AvailableCoins(interfaces::Chain::Lock& locked_chain, std::vector<
                 continue;
             }
 
-            bool solvable = IsSolvable(*this, pcoin->tx->vout[i].scriptPubKey);
+            SignatureData data;
+            bool solvable = IsSolvable(*this, pcoin->tx->vout[i].scriptPubKey, data);
             bool spendable = ((mine & ISMINE_SPENDABLE) != ISMINE_NO) || (((mine & ISMINE_WATCH_ONLY) != ISMINE_NO) && (coinControl && coinControl->fAllowWatchOnly && solvable));
+            Stacks stack(data);
+            txnouttype scriptType = ExtractDataFromIncompleteScript(data, stack, BaseSignatureChecker(), pcoin->tx->vout[i]);
+
+            if (coinControl && coinControl->m_tx_type != TX_INVALID) { // TX_INVALID means unset
+                if (coinControl->m_tx_type == TX_NONVAULT) {
+                    if (scriptType == TX_VAULT_ALERTADDRESS || scriptType == TX_VAULT_INSTANTADDRESS) {
+                        continue;
+                    }
+                } else if (coinControl->m_tx_type == TX_ALERT || coinControl->m_tx_type == TX_RECOVERY) {
+                    if (scriptType != TX_VAULT_ALERTADDRESS && scriptType != TX_VAULT_INSTANTADDRESS) {
+                        continue;
+                    }
+                } else if (coinControl->m_tx_type == TX_INSTANT) {
+                    if (scriptType != TX_VAULT_INSTANTADDRESS) {
+                        continue;
+                    }
+                } else {
+                    assert(false);
+                }
+            }
 
             vCoins.push_back(COutput(pcoin, i, nDepth, spendable, solvable, safeTx, (coinControl && coinControl->fAllowWatchOnly)));
 
@@ -2416,6 +2502,52 @@ void CWallet::AvailableCoins(interfaces::Chain::Lock& locked_chain, std::vector<
                 return;
             }
         }
+    }
+}
+
+void CWallet::FilterAvailableCoinsForAlertTx(std::vector<COutput>& vAvailableCoins, const CAmount& nTargetValue) {
+    std::unordered_map<std::string, std::vector<COutput> > coinsByAlertAddress;
+    std::unordered_map<std::string, std::vector<COutput> > coinsByInstantAddress;
+    std::unordered_map<std::string, CAmount> addressToAmount;
+
+    for (const COutput& coin : vAvailableCoins) {
+        const CTxOut& txout = coin.tx->tx->vout[coin.i];
+
+        SignatureData data;
+        IsSolvable(*this, txout.scriptPubKey, data);
+        Stacks stack(data);
+        txnouttype scriptType = ExtractDataFromIncompleteScript(data, stack, BaseSignatureChecker(), txout);
+
+        CHashWriter ss(SER_GETHASH, 0);
+        ss << data.redeem_script;
+        std::string redeemScriptHash = ss.GetHash().GetHex();
+
+        addressToAmount[redeemScriptHash] += txout.nValue;
+
+        if (scriptType == TX_VAULT_ALERTADDRESS) {
+            coinsByAlertAddress[redeemScriptHash].push_back(coin);
+        } else if (scriptType == TX_VAULT_INSTANTADDRESS) {
+            coinsByInstantAddress[redeemScriptHash].push_back(coin);
+        } else {
+            assert(false);
+        }
+    }
+
+    auto comp = [&](const std::pair<std::string, std::vector<COutput> >& a, const std::pair<std::string, std::vector<COutput> >& b) {
+        return addressToAmount[a.first] < addressToAmount[b.first];
+    };
+
+    auto maxAmountAlertAddr = std::max_element(coinsByAlertAddress.begin(), coinsByAlertAddress.end(), comp);
+    auto maxAmountInstantAddr = std::max_element(coinsByInstantAddress.begin(), coinsByInstantAddress.end(), comp);
+
+    if (maxAmountAlertAddr != coinsByAlertAddress.end() && addressToAmount[maxAmountAlertAddr->first] >= nTargetValue) {
+        // first try to use coins from alert addr
+        vAvailableCoins = coinsByAlertAddress[maxAmountAlertAddr->first];
+    } else if (maxAmountInstantAddr != coinsByInstantAddress.end() && addressToAmount[maxAmountInstantAddr->first] >= nTargetValue) {
+        vAvailableCoins = coinsByInstantAddress[maxAmountInstantAddr->first];
+    } else {
+        // insufficient funds
+        vAvailableCoins.clear();
     }
 }
 
@@ -2785,6 +2917,7 @@ bool CWallet::CreateTransaction(interfaces::Chain::Lock& locked_chain, const std
                          int& nChangePosInOut, std::string& strFailReason, const CCoinControl& coin_control, bool sign)
 {
     CAmount nValue = 0;
+    nFeeRet = 0;
     int nChangePosRequest = nChangePosInOut;
     unsigned int nSubtractFeeFromAmount = 0;
     for (const auto& recipient : vecSend)
@@ -2819,6 +2952,10 @@ bool CWallet::CreateTransaction(interfaces::Chain::Lock& locked_chain, const std
         {
             std::vector<COutput> vAvailableCoins;
             AvailableCoins(*locked_chain, vAvailableCoins, true, &coin_control);
+            if (coin_control.m_tx_type == TX_ALERT) {
+                FilterAvailableCoinsForAlertTx(vAvailableCoins, nValue);
+            }
+
             CoinSelectionParams coin_selection_params; // Parameters for coin selection, init with dummy
 
             // Create change script that will be used if we need change
@@ -2837,24 +2974,37 @@ bool CWallet::CreateTransaction(interfaces::Chain::Lock& locked_chain, const std
                 //  rediscover unknown transactions that were written with keys of ours to recover
                 //  post-backup change.
 
-                // Reserve a new key pair from key pool
-                if (!CanGetAddresses(true)) {
-                    strFailReason = _("Can't generate a change-address key. No keys in the internal keypool and can't generate any keys.");
-                    return false;
-                }
-                CPubKey vchPubKey;
-                bool ret;
-                ret = reservekey.GetReservedKey(vchPubKey, true);
-                if (!ret)
-                {
-                    strFailReason = _("Keypool ran out, please call keypoolrefill first");
-                    return false;
-                }
+                if (coin_control.m_tx_type == TX_ALERT || coin_control.m_tx_type == TX_INSTANT || coin_control.m_tx_type == TX_RECOVERY) {
+                    // Send change back to the vault address.
+                    // For vault tx, we are unable to generate new change address without user interaction,
+                    // also, we should send change back to one of the vault addresses.
+                    if (!vAvailableCoins.empty()) {
+                        scriptChange = vAvailableCoins[0].tx->tx->vout[0].scriptPubKey;
+                    } else {
+                        strFailReason = _("Insufficient funds");
+                        return false;
+                    }
+                } else {
+                    // Reserve a new key pair from key pool
+                    if (!CanGetAddresses(true))
+                    {
+                        strFailReason = _("Can't generate a change-address key. No keys in the internal keypool and can't generate any keys.");
+                        return false;
+                    }
+                    CPubKey vchPubKey;
+                    bool ret;
+                    ret = reservekey.GetReservedKey(vchPubKey, true);
+                    if (!ret)
+                    {
+                        strFailReason = _("Keypool ran out, please call keypoolrefill first");
+                        return false;
+                    }
 
-                const OutputType change_type = TransactionChangeType(coin_control.m_change_type ? *coin_control.m_change_type : m_default_change_type, vecSend);
+                    const OutputType change_type = TransactionChangeType(coin_control.m_change_type ? *coin_control.m_change_type : m_default_change_type, vecSend);
 
-                LearnRelatedScripts(vchPubKey, change_type);
-                scriptChange = GetScriptForDestination(GetDestinationForKey(vchPubKey, change_type));
+                    LearnRelatedScripts(vchPubKey, change_type);
+                    scriptChange = GetScriptForDestination(GetDestinationForKey(vchPubKey, change_type));
+                }
             }
             CTxOut change_prototype_txout(0, scriptChange);
             coin_selection_params.change_output_size = GetSerializeSize(change_prototype_txout);
@@ -3103,7 +3253,7 @@ bool CWallet::CreateTransaction(interfaces::Chain::Lock& locked_chain, const std
                 const CScript& scriptPubKey = coin.txout.scriptPubKey;
                 SignatureData sigdata;
 
-                if (!ProduceSignature(*this, MutableTransactionSignatureCreator(&txNew, nIn, coin.txout.nValue, SIGHASH_ALL), scriptPubKey, sigdata))
+                if (!ProduceSignature(*this, MutableTransactionSignatureCreator(&txNew, nIn, coin.txout.nValue, SIGHASH_ALL), scriptPubKey, sigdata, coin_control.m_tx_type))
                 {
                     strFailReason = _("Signing transaction failed");
                     return false;
@@ -3112,6 +3262,16 @@ bool CWallet::CreateTransaction(interfaces::Chain::Lock& locked_chain, const std
                 }
 
                 nIn++;
+            }
+        }
+
+        // Check for requested transaction type
+        if (sign && coin_control.m_tx_type != TX_INVALID) {  // TX_INVALID means unset
+            auto txType = GetVaultTxType(txNew);
+            if (txType != coin_control.m_tx_type) {
+                std::string txTypeStr = GetTxnOutputType(txType);
+                strFailReason = _("Produced ") + txTypeStr + _(" transaction type, possibly missing keys");
+                return false;
             }
         }
 

@@ -97,7 +97,7 @@ static const char* FEE_ESTIMATES_FILENAME="fee_estimates.dat";
 /**
  * The PID file facilities.
  */
-static const char* BITCOIN_PID_FILENAME = "broyaled.pid";
+static const char* BITCOIN_PID_FILENAME = "bvaultd.pid";
 
 static fs::path GetPidFile()
 {
@@ -148,7 +148,7 @@ NODISCARD static bool CreatePidFile()
 /**
  * This is a minimally invasive approach to shutdown on LevelDB read errors from the
  * chainstate, while keeping user interface out of the common library, which is shared
- * between broyaled, and broyale-qt and non-server tools.
+ * between bvaultd, and bvault-qt and non-server tools.
 */
 class CCoinsViewErrorCatcher final : public CCoinsViewBacked
 {
@@ -552,8 +552,8 @@ void SetupServerArgs()
 
 std::string LicenseInfo()
 {
-    const std::string URL_SOURCE_CODE = "<https://github.com/bitcoinroyale/bitcoinroyale>";
-    const std::string URL_WEBSITE = "<https://bitcoinroyale.org>";
+    const std::string URL_SOURCE_CODE = "<https://github.com/bitcoinvault/bitcoinvault>";
+    const std::string URL_WEBSITE = "<https://bitcoinvault.global>";
 
     return CopyrightHolders(strprintf(_("Copyright (C) %i-%i"), 2009, COPYRIGHT_YEAR) + " ") + "\n" +
            "\n" +
@@ -1525,7 +1525,7 @@ bool AppInitMain(InitInterfaces& interfaces)
                 // At this point we're either in reindex or we've loaded a useful
                 // block tree into mapBlockIndex!
 
-                pcoinsdbview.reset(new CCoinsViewDB(nCoinDBCache, false, fReset || fReindexChainState));
+                pcoinsdbview.reset(new CCoinsViewDB(nCoinDBCache, chainparams, false, fReset || fReindexChainState));
                 pcoinscatcher.reset(new CCoinsViewErrorCatcher(pcoinsdbview.get()));
 
                 // If necessary, upgrade from older database format.
@@ -1665,7 +1665,7 @@ bool AppInitMain(InitInterfaces& interfaces)
         }
     }
 
-    if (chainparams.GetConsensus().vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout != 0) {
+    if (chainparams.GetConsensus().SegwitHeight > 0) {
         // Only advertise witness capabilities if they have a reasonable start time.
         // This allows us to have the code merged without a defined softfork, by setting its
         // end time to 0.

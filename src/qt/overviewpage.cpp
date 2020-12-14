@@ -243,7 +243,7 @@ void OverviewPage::setWalletModel(WalletModel *model)
         });
     }
 
-    // update the display unit, to not use the default ("BTCR")
+    // update the display unit, to not use the default ("BTCV")
     updateDisplayUnit();
 }
 

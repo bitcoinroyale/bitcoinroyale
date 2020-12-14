@@ -81,12 +81,12 @@ noinst_PROGRAMS =
 TESTS =
 BENCHMARKS =
 
-if BUILD_BROYALED
-  bin_PROGRAMS += broyaled
+if BUILD_BVAULTD
+  bin_PROGRAMS += bvaultd
 endif
 
 if BUILD_BITCOIN_CLI
-  bin_PROGRAMS += broyale-cli
+  bin_PROGRAMS += bvault-cli
 endif
 if BUILD_BITCOIN_TX
   bin_PROGRAMS += bitcoin-tx
@@ -103,6 +103,7 @@ BITCOIN_CORE_H = \
   addrdb.h \
   addrman.h \
   attributes.h \
+  auxpow.h \
   banman.h \
   base58.h \
   bech32.h \
@@ -167,6 +168,7 @@ BITCOIN_CORE_H = \
   random.h \
   reverse_iterator.h \
   reverselock.h \
+  rpc/auxpow_miner.h \
   rpc/blockchain.h \
   rpc/client.h \
   rpc/mining.h \
@@ -234,12 +236,13 @@ obj/build.h: FORCE
 	  "$(abs_top_srcdir)"
 libbitcoin_util_a-clientversion.$(OBJEXT): obj/build.h
 
-# server: shared between broyaled and broyale-qt
+# server: shared between bvaultd and bvault-qt
 libbitcoin_server_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(MINIUPNPC_CPPFLAGS) $(EVENT_CFLAGS) $(EVENT_PTHREADS_CFLAGS)
 libbitcoin_server_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_server_a_SOURCES = \
   addrdb.cpp \
   addrman.cpp \
+  auxpow.cpp \
   banman.cpp \
   bloom.cpp \
   blockencodings.cpp \
@@ -268,6 +271,7 @@ libbitcoin_server_a_SOURCES = \
   policy/rbf.cpp \
   pow.cpp \
   rest.cpp \
+  rpc/auxpow_miner.cpp \
   rpc/blockchain.cpp \
   rpc/mining.cpp \
   rpc/misc.cpp \
@@ -302,7 +306,7 @@ libbitcoin_zmq_a_SOURCES = \
 endif
 
 
-# wallet: shared between broyaled and broyale-qt, but only linked
+# wallet: shared between bvaultd and bvault-qt, but only linked
 # when wallet enabled
 libbitcoin_wallet_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 libbitcoin_wallet_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
@@ -388,6 +392,8 @@ libbitcoin_consensus_a_SOURCES = \
   consensus/validation.h \
   hash.cpp \
   hash.h \
+  policy/auxpow.h \
+  policy/auxpow.cpp \
   prevector.h \
   primitives/block.cpp \
   primitives/block.h \
@@ -411,7 +417,7 @@ libbitcoin_consensus_a_SOURCES = \
   util/strencodings.h \
   version.h
 
-# common: shared between broyaled, and broyale-qt and non-server tools
+# common: shared between bvaultd, and bvault-qt and non-server tools
 libbitcoin_common_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 libbitcoin_common_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_common_a_SOURCES = \
@@ -471,7 +477,7 @@ libbitcoin_util_a_SOURCES += compat/glibc_compat.cpp
 AM_LDFLAGS += $(COMPAT_LDFLAGS)
 endif
 
-# cli: shared between broyale-cli and broyale-qt
+# cli: shared between bvault-cli and bvault-qt
 libbitcoin_cli_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 libbitcoin_cli_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_cli_a_SOURCES = \
@@ -481,17 +487,17 @@ libbitcoin_cli_a_SOURCES = \
 nodist_libbitcoin_util_a_SOURCES = $(srcdir)/obj/build.h
 #
 
-# broyaled binary #
-broyaled_SOURCES = bitcoind.cpp
-broyaled_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-broyaled_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
-broyaled_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
+# bvaultd binary #
+bvaultd_SOURCES = bitcoind.cpp
+bvaultd_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+bvaultd_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+bvaultd_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
 
 if TARGET_WINDOWS
-broyaled_SOURCES += bitcoind-res.rc
+bvaultd_SOURCES += bitcoind-res.rc
 endif
 
-broyaled_LDADD = \
+bvaultd_LDADD = \
   $(LIBBITCOIN_SERVER) \
   $(LIBBITCOIN_WALLET) \
   $(LIBBITCOIN_SERVER) \
@@ -506,25 +512,25 @@ broyaled_LDADD = \
   $(LIBMEMENV) \
   $(LIBSECP256K1)
 
-broyaled_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS)
+bvaultd_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS)
 
-# broyale-cli binary #
-broyale_cli_SOURCES = bitcoin-cli.cpp
-broyale_cli_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
-broyale_cli_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
-broyale_cli_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
+# bvault-cli binary #
+bvault_cli_SOURCES = bitcoin-cli.cpp
+bvault_cli_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
+bvault_cli_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+bvault_cli_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
 
 if TARGET_WINDOWS
-broyale_cli_SOURCES += bitcoin-cli-res.rc
+bvault_cli_SOURCES += bitcoin-cli-res.rc
 endif
 
-broyale_cli_LDADD = \
+bvault_cli_LDADD = \
   $(LIBBITCOIN_CLI) \
   $(LIBUNIVALUE) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_CRYPTO)
 
-broyale_cli_LDADD += $(BOOST_LIBS) $(CRYPTO_LIBS) $(EVENT_LIBS)
+bvault_cli_LDADD += $(BOOST_LIBS) $(CRYPTO_LIBS) $(EVENT_LIBS)
 #
 
 # bitcoin-tx binary #

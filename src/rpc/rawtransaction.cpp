@@ -39,7 +39,7 @@
 #include <univalue.h>
 
 
-static void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
+void TxToJSON(const CBaseTransaction& tx, const uint256 hashBlock, const vaulttxntype txType, const vaulttxnstatus txStatus, UniValue& entry)
 {
     // Call into TxToUniv() in bitcoin-common to decode the transaction hex.
     //
@@ -47,6 +47,28 @@ static void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& 
     // available to code in bitcoin-common, so we query them here and push the
     // data into the returned UniValue.
     TxToUniv(tx, uint256(), entry, true, RPCSerializationFlags());
+
+    auto getTxTypeName = [] (const vaulttxntype txType) -> std::string {
+        switch (txType) {
+            case TX_ALERT: return "TX_ALERT";
+            case TX_INSTANT: return "TX_INSTANT";
+            case TX_RECOVERY: return "TX_RECOVERY";
+            case TX_INVALID: return "TX_INVALID";
+            default: return "TX_NONVAULT";
+        }
+    };
+    entry.pushKV("type", getTxTypeName(txType));
+
+    auto getTxStatusName = [] (const vaulttxnstatus txStatus) -> std::string {
+        switch (txStatus) {
+            case TX_PENDING: return "PENDING";
+            case TX_CONFIRMED: return "CONFIRMED";
+            case TX_RECOVERED: return "RECOVERED";
+            default: return "INVALID";
+        }
+    };
+    if (txStatus != TX_UNKNOWN)
+    	entry.pushKV("status", getTxStatusName(txStatus));
 
     if (!hashBlock.IsNull()) {
         LOCK(cs_main);
@@ -131,6 +153,8 @@ static UniValue getrawtransaction(const JSONRPCRequest& request)
             "     }\n"
             "     ,...\n"
             "  ],\n"
+            "  \"type\" : \"type\",	       (string) The transaction type\n"
+            "  \"status\" : \"status\",	   (string) The transaction status\n"
             "  \"blockhash\" : \"hash\",   (string) the block hash\n"
             "  \"confirmations\" : n,      (numeric) The confirmations\n"
             "  \"blocktime\" : ttt         (numeric) The block time in seconds since epoch (Jan 1 1970 GMT)\n"
@@ -182,9 +206,10 @@ static UniValue getrawtransaction(const JSONRPCRequest& request)
         f_txindex_ready = g_txindex->BlockUntilSyncedToCurrentChain();
     }
 
-    CTransactionRef tx;
+    CBaseTransactionRef tx;
     uint256 hash_block;
-    if (!GetTransaction(hash, tx, Params().GetConsensus(), hash_block, blockindex)) {
+    vaulttxnstatus txStatus;
+    if (!GetTransaction(hash, tx, Params().GetConsensus(), hash_block, blockindex, &txStatus)) {
         std::string errmsg;
         if (blockindex) {
             if (!(blockindex->nStatus & BLOCK_HAVE_DATA)) {
@@ -205,9 +230,28 @@ static UniValue getrawtransaction(const JSONRPCRequest& request)
         return EncodeHexTx(*tx, RPCSerializationFlags());
     }
 
+    vaulttxntype txType = GetVaultTxTypeNonContextual(*tx);
+    if (txType == TX_ALERT and txStatus == TX_PENDING) {
+        // Fetch previous transactions (inputs):
+        CCoinsView viewDummy;
+        CCoinsViewCache view(&viewDummy);
+        {
+            LOCK2(cs_main, mempool.cs);
+            CCoinsViewCache &viewChain = *pcoinsTip;
+            CCoinsViewMemPool viewMempool(&viewChain, mempool);
+            view.SetBackend(viewMempool); // temporarily switch cache backend to db+mempool view
+            // check if first input is still present in UTXOs, otherwise it is recovered
+            Coin coin = view.AccessCoin(tx->vin[0].prevout);
+            if (coin.IsConfirmed()) {
+                txStatus = TX_RECOVERED;
+            }
+            view.SetBackend(viewDummy); // switch back to avoid locking mempool for too long
+        }
+    }
+
     UniValue result(UniValue::VOBJ);
     if (blockindex) result.pushKV("in_active_chain", in_active_chain);
-    TxToJSON(*tx, hash_block, result);
+    TxToJSON(*tx, hash_block, txType, txStatus,  result);
     return result;
 }
 
@@ -280,7 +324,7 @@ static UniValue gettxoutproof(const JSONRPCRequest& request)
 
     if (pblockindex == nullptr)
     {
-        CTransactionRef tx;
+        CBaseTransactionRef tx;
         if (!GetTransaction(oneTxid, tx, Params().GetConsensus(), hashBlock) || hashBlock.IsNull())
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Transaction not yet in block");
         pblockindex = LookupBlockIndex(hashBlock);
@@ -583,6 +627,7 @@ static UniValue decoderawtransaction(const JSONRPCRequest& request)
             "     }\n"
             "     ,...\n"
             "  ],\n"
+            "  \"type\" : \"type\"	       (string) The transaction type\n"
             "}\n"
                 },
                 RPCExamples{
@@ -603,7 +648,10 @@ static UniValue decoderawtransaction(const JSONRPCRequest& request)
     }
 
     UniValue result(UniValue::VOBJ);
-    TxToUniv(CTransaction(std::move(mtx)), uint256(), result, false);
+    auto tx = CTransaction(std::move(mtx));
+    vaulttxntype txType = GetVaultTxTypeNonContextual(tx);
+    vaulttxnstatus txStatus = GetTransactionStatus(tx.GetHash(), Params().GetConsensus(), txType);
+    TxToJSON(tx, uint256(), txType, txStatus, result);
 
     return result;
 }
@@ -662,7 +710,8 @@ static UniValue decodescript(const JSONRPCRequest& request)
             txnouttype which_type = Solver(script, solutions_data);
             // Uncompressed pubkeys cannot be used with segwit checksigs.
             // If the script contains an uncompressed pubkey, skip encoding of a segwit program.
-            if ((which_type == TX_PUBKEY) || (which_type == TX_MULTISIG)) {
+            if ((which_type == TX_PUBKEY) || (which_type == TX_MULTISIG)
+                || (which_type == TX_VAULT_ALERTADDRESS) || (which_type == TX_VAULT_INSTANTADDRESS)) {
                 for (const auto& solution : solutions_data) {
                     if ((solution.size() != 1) && !CPubKey(solution).IsCompressed()) {
                         return r;
@@ -790,7 +839,7 @@ static UniValue combinerawtransaction(const JSONRPCRequest& request)
     return EncodeHexTx(CTransaction(mergedTx));
 }
 
-UniValue SignTransaction(interfaces::Chain& chain, CMutableTransaction& mtx, const UniValue& prevTxsUnival, CBasicKeyStore *keystore, bool is_temp_keystore, const UniValue& hashType)
+UniValue SignTransaction(interfaces::Chain& chain, CMutableTransaction& mtx, const UniValue& prevTxsUnival, CBasicKeyStore *keystore, bool is_temp_keystore, const UniValue& hashType, bool expectSpent, vaulttxntype txType)
 {
     // Fetch previous transactions (inputs):
     CCoinsView viewDummy;
@@ -897,17 +946,24 @@ UniValue SignTransaction(interfaces::Chain& chain, CMutableTransaction& mtx, con
     for (unsigned int i = 0; i < mtx.vin.size(); i++) {
         CTxIn& txin = mtx.vin[i];
         const Coin& coin = view.AccessCoin(txin.prevout);
-        if (coin.IsSpent()) {
+        if (!expectSpent && coin.IsSpent()) {
             TxInErrorToJSON(txin, vErrors, "Input not found or already spent");
             continue;
         }
+        // TODO-form: check if coin isSpent when expected
+        // information about spentHeight are missing right now
+        if (coin.IsConfirmed()) {
+            TxInErrorToJSON(txin, vErrors, "Input not found or already spent and confirmed");
+            continue;
+        }
+
         const CScript& prevPubKey = coin.out.scriptPubKey;
         const CAmount& amount = coin.out.nValue;
 
         SignatureData sigdata = DataFromTransaction(mtx, i, coin.out);
         // Only sign SIGHASH_SINGLE if there's a corresponding output:
         if (!fHashSingle || (i < mtx.vout.size())) {
-            ProduceSignature(*keystore, MutableTransactionSignatureCreator(&mtx, i, amount, nHashType), prevPubKey, sigdata);
+            ProduceSignature(*keystore, MutableTransactionSignatureCreator(&mtx, i, amount, nHashType), prevPubKey, sigdata, txType);
         }
 
         UpdateInput(txin, sigdata);
@@ -922,11 +978,24 @@ UniValue SignTransaction(interfaces::Chain& chain, CMutableTransaction& mtx, con
             if (serror == SCRIPT_ERR_INVALID_STACK_OPERATION) {
                 // Unable to sign input and verification failed (possible attempt to partially sign).
                 TxInErrorToJSON(txin, vErrors, "Unable to sign input, invalid stack size (possibly missing key)");
+            } else if (serror == SCRIPT_ERR_SIG_NULLFAIL) {
+                // Unable to sign input and verification failed (possible attempt to partially sign).
+                TxInErrorToJSON(txin, vErrors, "Unable to sign input, zero signature (possibly missing key)");
             } else {
                 TxInErrorToJSON(txin, vErrors, ScriptErrorString(serror));
             }
         }
     }
+
+    // Check for requested transaction type
+    if (txType != TX_INVALID) {  // TX_INVALID means unset
+        auto actualTxType = GetVaultTxType(mtx);
+        if (actualTxType == TX_INVALID) {
+            std::string expectedTxTypeStr = GetTxnOutputType(txType);
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, _("Produced invalid transaction type, type ") + expectedTxTypeStr + _(" was expected"));
+        }
+    }
+
     bool fComplete = vErrors.empty();
 
     UniValue result(UniValue::VOBJ);
@@ -1019,7 +1088,38 @@ static UniValue signrawtransactionwithkey(const JSONRPCRequest& request)
         keystore.AddKey(key);
     }
 
-    return SignTransaction(*g_rpc_interfaces->chain, mtx, request.params[2], &keystore, true, request.params[3]);
+    vaulttxntype txType = TX_INVALID;
+    bool expectToBeSpent = false;
+    CScript redeemScript;
+    UniValue rs = find_value(request.params[2].get_array()[0].get_obj(), "redeemScript");
+    if (!rs.isNull()) {
+        std::vector<unsigned char> rsData(ParseHexV(rs, "redeemScript"));
+        redeemScript = CScript(rsData.begin(), rsData.end());
+    }
+    CScript witnessScript;
+    UniValue ws = find_value(request.params[2].get_array()[0].get_obj(), "witnessScript");
+    if (!ws.isNull()) {
+        std::vector<unsigned char> wsData(ParseHexV(ws, "witnessScript"));
+        witnessScript = CScript(wsData.begin(), wsData.end());
+    }
+
+    std::vector<valtype> pubkeys;
+    if (MatchAlertAddress(redeemScript, pubkeys) || MatchAlertAddress(witnessScript, pubkeys)) {
+        if (keys.size() == 1) txType = TX_ALERT;
+        else if (keys.size() > 1) {
+            txType = TX_RECOVERY;
+            expectToBeSpent = true;
+        }
+    } else if (MatchInstantAlertAddress(redeemScript, pubkeys) || MatchInstantAlertAddress(witnessScript, pubkeys)) {
+        if (keys.size() == 1) txType = TX_ALERT;
+        else if (keys.size() == 2) txType = TX_INSTANT;
+        else if (keys.size() > 2) {
+            txType = TX_RECOVERY;
+            expectToBeSpent = true;
+        }
+    }
+
+    return SignTransaction(*g_rpc_interfaces->chain, mtx, request.params[2], &keystore, true, request.params[3], expectToBeSpent, txType);
 }
 
 UniValue signrawtransaction(const JSONRPCRequest& request)

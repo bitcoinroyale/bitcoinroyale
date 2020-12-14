@@ -3,9 +3,9 @@ Release Process
 
 Before every release candidate:
 
-* Update translations (ping wumpus on IRC) see [translation_process.md](https://github.com/bitcoinroyale/bitcoinroyale/blob/master/doc/translation_process.md#synchronising-translations).
+* Update translations (ping wumpus on IRC) see [translation_process.md](https://github.com/bitcoinvault/bitcoinvault/blob/master/doc/translation_process.md#synchronising-translations).
 
-* Update manpages, see [gen-manpages.sh](https://github.com/bitcoinroyale/bitcoinroyale/blob/master/contrib/devtools/README.md#gen-manpagessh).
+* Update manpages, see [gen-manpages.sh](https://github.com/bitcoinvault/bitcoinvault/blob/master/contrib/devtools/README.md#gen-manpagessh).
 * Update release candidate version in `configure.ac` (`CLIENT_VERSION_RC`)
 
 Before every minor and major release:
@@ -38,7 +38,7 @@ Check out the source code in the following directory hierarchy.
     git clone https://github.com/bitcoin-core/gitian.sigs.git
     git clone https://github.com/bitcoin-core/bitcoin-detached-sigs.git
     git clone https://github.com/devrandom/gitian-builder.git
-    git clone https://github.com/bitcoinroyale/bitcoinroyale.git
+    git clone https://github.com/bitcoinvault/bitcoinvault.git
 
 ### Bitcoin maintainers/release engineers, suggestion for writing release notes
 
@@ -293,9 +293,9 @@ bitcoin.org (see below for bitcoin.org update instructions).
 
 - Update other repositories and websites for new version
 
-  - bitcoinroyale.org blog post
+  - bitcoinvault.global blog post
 
-  - bitcoinroyale.org RPC documentation update
+  - bitcoinvault.global global documentation update
 
   - Update packaging repo
 
@@ -323,7 +323,7 @@ bitcoin.org (see below for bitcoin.org update instructions).
 
       - Archive release notes for the new version to `doc/release-notes/` (branch `master` and branch of the release)
 
-      - Create a [new GitHub release](https://github.com/bitcoinroyale/bitcoinroyale/releases/new) with a link to the archived release notes.
+      - Create a [new GitHub release](https://github.com/bitcoinvault/bitcoinvault/releases/new) with a link to the archived release notes.
 
 - Announce the release:
 

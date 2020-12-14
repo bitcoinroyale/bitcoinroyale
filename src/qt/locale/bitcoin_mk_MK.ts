@@ -577,8 +577,8 @@
 <context>
     <name>bitcoin-core</name>
     <message>
-        <source>Bitcoin Royale</source>
-        <translation>Биткоин Royale</translation>
+        <source>Bitcoin Vault</source>
+        <translation>Биткоин Vault</translation>
     </message>
     <message>
         <source>Warning</source>

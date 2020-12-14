@@ -1,11 +1,11 @@
-Bitcoin Royale core version 0.1.0 is now available from https://github.com/bitcoinroyale/bitcoinroyale/releases.
+Bitcoin Vault core version 0.1.0 is now available from https://github.com/bitcoinvault/bitcoinvault/releases.
 
 Initial release
 ===============
 
-This is the first release of the github.com/bitcoinroyale reference implementation. This release is based on Bitcoin Core 0.18.0.
+This is the first release of the github.com/bitcoinvault reference implementation. This release is based on Bitcoin Core 0.18.0.
 
-This Bitcoin Royale protocol implementation is still work in progress and contains the minimum feature set required for starting the expedited bootstrap period defined in the protocol.
+This Bitcoin Vault protocol implementation is still work in progress and contains the minimum feature set required for starting the expedited bootstrap period defined in the protocol.
 
 Notable features
 ================
@@ -13,12 +13,12 @@ Notable features
 2MB block size
 --------------
 
-The protocol requires that eventually an alert section will be added to the block. This means that all transactions will placed in blocks twice - once in the alerts and once more as committed transactions. To prepare for this redundancy, the default 1MB block size of Bitcoin has been doubled in Bitcoin Royale.
+The protocol requires that eventually an alert section will be added to the block. This means that all transactions will placed in blocks twice - once in the alerts and once more as committed transactions. To prepare for this redundancy, the default 1MB block size of Bitcoin has been doubled in Bitcoin Vault.
 
 Protocol params
 ---------------
 
-The various protocol defining params like the genesis block, activation block number of various BIPs, address prefixes have been adapted to Bitcoin Royale.
+The various protocol defining params like the genesis block, activation block number of various BIPs, address prefixes have been adapted to Bitcoin Vault.
 
 Expedited reward schedule
 -------------------------
@@ -38,7 +38,7 @@ To assist community contributors in pushing code, a manual end-to-end test has b
 Branding
 --------
 
-Since the original codebase is Bitcoin Core, all branding of "Bitcoin" has been converted to "Bitcoin Royale". This includes executables which have been renamed to `broyale*` and the coin itself that is named `BTCR`.
+Since the original codebase is Bitcoin Core, all branding of "Bitcoin" has been converted to "Bitcoin Vault". This includes executables which have been renamed to `bvault*` and the coin itself that is named `BTCV`.
 
 0.1.0 Change log
 ================
@@ -91,9 +91,9 @@ Branding:
 - `23eb67bd` Branding: org website
 - `a2d3c3e5` Branding: improve README
 - `787cfcce` Branding: fixed mistakes in Makefile due to binary renames
-- `ec771662` Branding: updated new Bitcoin Royale files with the branding
+- `ec771662` Branding: updated new Bitcoin Vault files with the branding
 - `4a0d4276` Branding: rename bitcoin-qt binary
-- `f72e1473` Branding: coin name BTCR
+- `f72e1473` Branding: coin name BTCV
 - `92b46253` Branding: welcome message
 - `1bd658d4` Branding: minor fix in README
 - `af4eeec7` Branding: added coin metrics to README

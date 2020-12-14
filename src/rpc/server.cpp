@@ -267,7 +267,7 @@ UniValue stop(const JSONRPCRequest& jsonRequest)
     if (jsonRequest.params[0].isNum()) {
         MilliSleep(jsonRequest.params[0].get_int());
     }
-    return "Bitcoin Royale server stopping";
+    return "Bitcoin Vault server stopping";
 }
 
 static UniValue uptime(const JSONRPCRequest& jsonRequest)
@@ -584,7 +584,7 @@ std::vector<std::string> CRPCTable::listCommands() const
 
 std::string HelpExampleCli(const std::string& methodname, const std::string& args)
 {
-    return "> broyale-cli " + methodname + " " + args + "\n";
+    return "> bvault-cli " + methodname + " " + args + "\n";
 }
 
 std::string HelpExampleRpc(const std::string& methodname, const std::string& args)
